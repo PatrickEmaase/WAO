@@ -46,15 +46,12 @@
 \begin{document}
 
 \begin{abstract}
-Latent action models (LAMs) learn controllable dynamics from action-free video and are increasingly used to pretrain robot policies.
-They are trained only in forward time, yet backward planning, undoing mistakes, resetting and judging whether a step can be reversed all require the reverse direction.
-Recent work obtains reversal cheaply by forcing the latent action of a reversed frame pair to be the negative of the forward action.
-We show that this sign-reversal assumption breaks whenever the scene moves on its own: under gravity or settling, the passive dynamics are absorbed into the latent action, and we prove that a sign-reversal model in Koopman form is consistent only when the drift is zero.
-We propose {\method} (Reverse Action from Video), in which a latent action $z$ acts on a lifted state through a Koopman operator $K(z)=\exp(G_0+\sum_i z_iG_i)$ whose drift generator $G_0$ is kept separate from the action generators $G_i$.
-From forward videos alone, {\method} yields in closed form the exact inverse of every learned step, a time-reversal action $-z$ under negated drift, an undo action $-z-2c$ with $c$ the drift-equivalent action, and a per-step reversibility score given by the condition number of $K(z)$.
-We prove these properties, characterise when a single-step undo exists, and show that the agent/drift split is not identifiable from video without an anchor.
-On 100 real bimanual ALOHA episodes of putting bread into a toaster and taking it out, evaluated with 5-fold cross-validation in both directions, {\method} keeps reverse rollouts stable (end-distance ratio 0.77 and 0.84 versus 1.55 and 1.86 for sign reversal), detects irreversible drops on par with a plain LAM (AUROC 0.75 and 0.63) and adapts best to the opposite task.
-A drift residual near 0.99 shows that undoing a drop in one step remains out of reach, which {\method} measures but does not overcome.
+Latent action models learn controllable dynamics from action-free video, but only in forward time, although undoing mistakes, planning backward and judging reversibility all need the reverse direction.
+Recent methods obtain reversal by making the action of a reversed frame pair the negative of the forward action.
+We show that this fails whenever the scene moves on its own: under gravity or settling, the passive dynamics are absorbed into the latent action.
+We propose {\method} (Reverse Action from Video), in which a latent action acts on a lifted state through a Koopman operator whose drift generator is kept separate from its action generators.
+From forward videos alone, {\method} then gives in closed form an exact backward step, a time-reversal action, an undo action and a per-step reversibility score, and we prove when each holds.
+On 100 real bimanual robot episodes of putting bread into a toaster and taking it out, {\method} keeps reverse rollouts stable where sign reversal diverges (end-distance ratio 0.77--0.84 versus 1.55--1.86), detects irreversible drops on par with a plain latent action model and adapts best to the reverse task, while undoing a drop in a single step remains out of reach.
 \end{abstract}
 
 \maketitle
