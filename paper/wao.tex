@@ -83,7 +83,7 @@ Because the generator is affine in $z$, every reverse quantity follows in closed
 	\item \textbf{Two reverse actions, defined and derived.} We formalise the time-reversal action and the undo action and show that {\method} gives them in closed form, as $\zb=-z$ under negated drift and $\zundo=-z-2c$, where $c$ is the latent action that best mimics the drift on visited states.
 	\item \textbf{Theory.} We prove that every learned step is exactly invertible, that the time-reversal action holds without any commutativity assumption, and we characterise exactly when a single-step undo exists. We prove that a sign-reversal model in Koopman form is consistent only when the drift vanishes, that the agent/drift split is not identifiable from video when the dynamics have an arrow of time, and we bound the reversibility score by the symmetric part of the generator.
 	\item \textbf{A drift-aware reversal loss} that decodes swapped frame pairs under the reversed drift $-G_0$, so that passive dynamics are not absorbed into the latent action.
-	\item \textbf{A real-robot evaluation} on 100 bimanual ALOHA episodes~\cite{zhao2023aloha} of inserting bread into a toaster and removing it, with 5-fold cross-validation in both transfer directions, a feature check, a controlled two-dimensional study, ablations and a step-by-step walkthrough of every model variable.
+	\item \textbf{A real-robot evaluation} on 100 bimanual ALOHA episodes~\cite{zhao2023aloha} of inserting bread into a toaster and removing it, with 5-fold cross-validation in both transfer directions, supported in the appendices by per-fold results, a controlled two-dimensional study, development runs and a step-by-step walkthrough of every model variable.
 \end{enumerate}
 
 \paragraph{Findings.}
@@ -93,7 +93,7 @@ The evaluation also marks clear limits: a plain LAM matches {\method} on reversi
 The rest of the paper is organised as follows.
 Section~\ref{s:related} reviews related work.
 Section~\ref{s:problem} defines the problem, Section~\ref{s:method} presents {\method}, and Section~\ref{s:theory} gives its theory.
-Section~\ref{s:setup} describes the experimental setup, Section~\ref{s:results} reports the results, Section~\ref{s:discussion} discusses limitations, and Section~\ref{s:conclusion} concludes.
+Section~\ref{s:setup} describes the experimental setup, Section~\ref{s:results} reports the results, Section~\ref{s:discussion} discusses limitations and Section~\ref{s:conclusion} concludes; the appendices give further results, a controlled study, development runs and implementation details.
 
 % =====================================================================
 \section{Related Work} \label{s:related}
@@ -399,7 +399,7 @@ Gripper positions are used only to locate releases for evaluation: a release is 
 \subsection{Features and Implementation}
 The frozen encoder is DINOv2 ViT-S/14~\cite{oquab2024dinov2} on the top camera, resized to $224\times392$.
 We concatenate the CLS token (384-D) with a $2\times4$ average-pooled patch grid (3,072-D), standardise, and reduce to 128 dimensions by PCA fitted on training episodes.
-A feature check confirms that this representation encodes the scene state: a linear probe decodes the three stages with 97.5\% balanced accuracy over 40 episodes, compared with 97.9\% for a finer $4\times7$ grid, 98.2\% for the wrist cameras and 98.4\% for their combination (chance 33.3\%).
+A feature check confirms that this representation encodes the scene state: a linear probe decodes the three scene stages with 97.5\% balanced accuracy (chance 33.3\%; Appendix~\ref{a:dev}).
 The head $\phi$ and decoder are two-layer MLPs with 256 hidden units, $d=64$ and $m=16$.
 $K(z)$ is computed with a batched matrix exponential based on scaling and squaring~\cite{higham2005scaling}.
 All models share the encoder, decoder and budget: 4,000 Adam steps, batch size 512, learning rate $10^{-3}$, $\lambda_b=\lambda_r=\lambda_a=1$ and $\lambda_v=10^{-3}$.
@@ -502,93 +502,12 @@ At $k=5$ the error is 1.008 and 0.796 without the anchor and 1.033 and 0.808 wit
 Sharing the drift across tasks thus transfers the scene physics.
 For I$\to$R, however, the error stays near the no-change level of 1.0, so the removal motions remain hard to predict from insertion data.
 
-\subsection{Overall Comparison}
+\subsection{Further Results}
+No model recovers the real reverse joint motion: every joint-probe error exceeds 1.0, although all beat negated, time-reversed joint deltas (1.58 and 1.53), which confirms that removal is not insertion played backward.
+Appendix~\ref{a:cv} gives all metrics at a glance, the few-shot errors at every $k$, per-fold tables and a step-by-step walkthrough of every model variable on a held-out episode.
+Appendix~\ref{a:toy} tests the theory on a two-dimensional system with known drift, where the derived undo action returns the state about four times closer than negating the action.
+Appendix~\ref{a:dev} reports the development runs behind the step size, the generator penalty, the drift fit, the release labels and the feature choice, and Appendix~\ref{a:impl} lists all implementation settings.
 
-\begin{figure*}[t]
-	\centering
-	\includegraphics[width=0.92\textwidth]{figs/fig_scorecard_heatmap.pdf}
-	\caption{All metrics for all models and both directions. Cells show raw means over 5 folds; shading is scaled per column among the four non-oracle models, so small absolute gaps can look large.}
-	\label{f:scorecard}
-\end{figure*}
-
-Fig.~\ref{f:scorecard} shows that no model wins everywhere.
-The {\method} variants lead on reversibility detection, end distance for R$\to$I and transfer, while the plain LAM leads on action alignment and on end distance for I$\to$R, and the sign-reversal LAM has the lowest joint-probe error despite its divergent rollouts.
-No model recovers the real reverse joint motion: every probe error exceeds 1.0, although all beat negated, time-reversed joint deltas (1.58 and 1.53), which confirms that removal is not insertion played backward.
-
-\subsection{Walkthrough of the Model Variables}
-
-\begin{figure*}[t]
-	\centering
-	\includegraphics[width=\textwidth]{figs/fig_walkthrough.png}
-	\caption{All {\method} variables at step 26 of a held-out insertion episode (13.0\,s, the first release): camera frame, feature $o_t$, lifted state $s_t$, latent action $z_t$, step operator $K(z_t)-I$, drift $G_0$, reverse actions, prediction errors and the reversibility score $\kappa_t$. A video of all 49 steps accompanies the paper.}
-	\label{f:walk}
-\end{figure*}
-
-Fig.~\ref{f:walk} shows every variable of a model trained on insertion, on a held-out insertion episode.
-Reversal consistency is strong: the IDM output on the swapped pair nearly mirrors $-z_t$ (cosine $+0.95$ at the release step).
-Because the drift residual is 0.992 for this model, $\zundo$ is almost identical to $-z_t$, in line with Proposition~\ref{p:undo}(c).
-In this episode $\kappa_t$ does not peak at the release itself (step 26, $\kappa_t=3.5$); its largest values occur at steps 10, 33 and 43, likely other contact events.
-The AUROC of Table~\ref{t:main} is an aggregate over many episodes, and single episodes can be noisier.
-
-\subsection{Controlled Study with Known Drift}
-
-\begin{table}
-	\centering
-	\caption{Two-dimensional point with constant drift $g$, observed through a random nonlinear lift. The analytic undo action is $u'=-u-2g$. Return error is the simulator distance to $p_t$ after executing the undo action, divided by the step length.}
-	\label{t:toy}
-	\footnotesize
-	\setlength{\tabcolsep}{4pt}
-	\begin{tabular}{lcc}
-		\toprule
-		Quantity & No reversal loss & Reversal loss \\
-		\midrule
-		Forward relative error & 0.023 & 0.013 \\
-		Backward relative error (never trained) & 0.012 & 0.009 \\
-		$\cos(\text{IDM}(o_{t+1},o_t),-z)$ & 0.62 & 0.995 \\
-		No-op code size $\|z_{\text{no-op}}\|/\mathrm{rms}(z)$ & 0.36 & 0.48 \\
-		Linear probe $R^2$, $z\to u$ & 0.84 & 0.89 \\
-		Return error, model undo action & 0.34 & 0.26 \\
-		Return error, naive $u'=-u$ & 1.15 & 1.15 \\
-		Mean $|u_{\text{undo}}-(-u-2g)|$ (naive: 0.5) & 0.19 & 0.15 \\
-		\bottomrule
-	\end{tabular}
-\end{table}
-
-To test the theory where the ground truth is known, we simulate a two-dimensional point $p_{t+1}=p_t+\Delta t\,(g+u)$ with constant drift $g=(0,-0.5)$, actions $u\in[-1,1]^2$ and $\Delta t=0.1$, observed only through a fixed random nonlinear lift to 32 dimensions.
-A Koopman model with a constant coordinate is trained on forward transitions only (Table~\ref{t:toy}).
-Backward prediction through the exact inverse is as accurate as forward prediction although it is never trained, as Proposition~\ref{p:inverse} predicts.
-The IDM is not reversal-consistent by itself (cosine 0.62); the reversal loss makes it so (0.995) and, without an anchor, moves part of the drift into the latent code (no-op code size 0.48), as Proposition~\ref{p:gauge} allows.
-Executed in the simulator, the model's undo action returns the point to within 0.26--0.34 step lengths, whereas naively negating the action misses by 1.15, and the recovered action is close to the analytic $-u-2g$.
-The remaining error tracks the linear-probe $R^2$ of 0.84--0.89.
-
-\subsection{Ablations and Development Observations}
-
-\begin{table}
-	\centering
-	\caption{Development runs on insertion, fold 0 (single run each), and the feature check. Forward error is relative to predicting no change.}
-	\label{t:ablation}
-	\footnotesize
-	\setlength{\tabcolsep}{4pt}
-	\begin{tabular}{lc}
-		\toprule
-		Setting & Value \\
-		\midrule
-		Step 0.1\,s, forward error ({\method} / sign-rev.) & 0.54 / 0.51 \\
-		Step 0.5\,s, forward error ({\method} / sign-rev.) & 0.24 / 0.23 \\
-		Drift residual, $c$ fitted on matrices & 0.99 \\
-		Drift residual, $c$ fitted on visited states (CV mean) & 0.988 \\
-		Stage decoding, top CLS + $2\times4$ grid & 97.5\% \\
-		Stage decoding, top CLS + $4\times7$ grid & 97.9\% \\
-		Stage decoding, wrist cameras & 98.2\% \\
-		Stage decoding, top + wrists & 98.4\% \\
-		\bottomrule
-	\end{tabular}
-\end{table}
-
-Table~\ref{t:ablation} collects the design decisions made during development.
-A step of 0.1\,s left forward error at about 0.5 of the no-change baseline for all models, because consecutive frames barely differ; a step of 0.5\,s, trained on all five phase offsets, halved it.
-Fitting the drift-equivalent action $c$ on visited states rather than on whole matrices barely changed the residual, which stays near 0.99: the 16 action generators cancel only about 1\% of the drift's effect on visited states.
-The feature check shows that the scene stage is linearly decodable from every feature variant, so the transfer limits are not caused by the visual representation.
 
 % =====================================================================
 \section{Discussion and Limitations} \label{s:discussion}
@@ -626,5 +545,8 @@ Multi-step undo, stronger anchors and deformable objects are the next steps.
 
 \bibliographystyle{IEEEtran}
 \bibliography{wao}
+
+\clearpage
+\input{appendix.tex}
 
 \end{document}

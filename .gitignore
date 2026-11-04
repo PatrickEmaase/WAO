@@ -11,3 +11,4 @@ paper/p8-*.png
 paper/sheet.png
 *.npz
 __pycache__/
+paper/pg-*.png
