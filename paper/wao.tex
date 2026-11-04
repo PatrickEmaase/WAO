@@ -1,4 +1,4 @@
-% WAO: Learning Reverse Action from Video -- JCSE (KIISE) regular paper draft.
+% RAVI (Reverse Action from Video): Learning Reverse Actions from Video -- JCSE (KIISE) regular paper draft.
 % Build: pdflatex wao; bibtex wao; pdflatex wao; pdflatex wao
 \documentclass{jcse}
 
@@ -13,7 +13,7 @@
 \usepackage{flushend}
 \input{setup.tex}
 
-\newcommand{\method}{WAO}
+\newcommand{\method}{RAVI}
 \newcommand{\zb}{\bar{z}}
 \newcommand{\zundo}{z_{\mathrm{undo}}}
 \newcommand{\R}{\mathbb{R}}
@@ -47,7 +47,7 @@ Latent action models (LAMs) learn controllable dynamics from action-free video a
 They are trained only in forward time, yet backward planning, undoing mistakes, resetting and judging whether a step can be reversed all require the reverse direction.
 Recent work obtains reversal cheaply by forcing the latent action of a reversed frame pair to be the negative of the forward action.
 We show that this sign-reversal assumption breaks whenever the scene moves on its own: under gravity or settling, the passive dynamics are absorbed into the latent action, and we prove that a sign-reversal model in Koopman form is consistent only when the drift is zero.
-We propose {\method}, in which a latent action $z$ acts on a lifted state through a Koopman operator $K(z)=\exp(G_0+\sum_i z_iG_i)$ whose drift generator $G_0$ is kept separate from the action generators $G_i$.
+We propose {\method} (Reverse Action from Video), in which a latent action $z$ acts on a lifted state through a Koopman operator $K(z)=\exp(G_0+\sum_i z_iG_i)$ whose drift generator $G_0$ is kept separate from the action generators $G_i$.
 From forward videos alone, {\method} yields in closed form the exact inverse of every learned step, a time-reversal action $-z$ under negated drift, an undo action $-z-2c$ with $c$ the drift-equivalent action, and a per-step reversibility score given by the condition number of $K(z)$.
 We prove these properties, characterise when a single-step undo exists, and show that the agent/drift split is not identifiable from video without an anchor.
 On 100 real bimanual ALOHA episodes of putting bread into a toaster and taking it out, evaluated with 5-fold cross-validation in both directions, {\method} keeps reverse rollouts stable (end-distance ratio 0.77 and 0.84 versus 1.55 and 1.86 for sign reversal), detects irreversible drops on par with a plain LAM (AUROC 0.75 and 0.63) and adapts best to the opposite task.
@@ -77,7 +77,7 @@ The \textbf{time-reversal action} explains the reversed clip under reversed phys
 A ball that falls while the agent idles makes the gap concrete: in the reversed clip it rises with zero action, but undoing the fall requires the agent to push upward against gravity.
 A sign-reversal loss applied with a single shared forward model cannot represent both cases, and so it encodes the fall as something the agent did.
 
-This paper proposes {\method}, a latent action model whose dynamics separate what the agent does from what the scene does on its own.
+This paper proposes {\method} (Reverse Action from Video), a latent action model whose dynamics separate what the agent does from what the scene does on its own.
 {\method} learns a lifted latent state on which a latent action acts through a Koopman operator~\cite{koopman1931,mezic2005spectral,brunton2022modern}
 \begin{equation}
 K(z)=\exp\Big(G_0+\sum_{i=1}^m z_iG_i\Big),

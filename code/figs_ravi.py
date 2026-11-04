@@ -8,10 +8,10 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(ROOT, "results", "figures_wao"); os.makedirs(OUT, exist_ok=True)
+OUT = os.path.join(ROOT, "results", "figures_ravi"); os.makedirs(OUT, exist_ok=True)
 
 # categorical slots in fixed order (validated: adjacent CVD dE >= 9.1, normal-vision >= 22.9); oracle = neutral reference
-MODELS = [("rave", "WAO", "#2a78d6"), ("rave_noanchor", "WAO w/o anchor", "#eb6834"),
+MODELS = [("rave", "RAVI", "#2a78d6"), ("rave_noanchor", "RAVI w/o anchor", "#eb6834"),
           ("lam", "LAM", "#1baf7a"), ("signrev", "Sign-rev. LAM", "#eda100")]
 ORACLE = ("oracle", "Oracle (upper bound)", "#888780")
 INK, INK2, GRID, SURF = "#0b0b0b", "#52514e", "#e6e5e0", "#fcfcfb"
@@ -111,7 +111,7 @@ for gi, (_, dname) in enumerate(DIRS):
 ax.tick_params(length=0); [s.set_visible(False) for s in ax.spines.values()]
 cb = fig.colorbar(im, ax=ax, fraction=0.025, pad=0.01); cb.outline.set_visible(False)
 cb.set_label("relative score (1 = best, 0 = worst non-oracle)", fontsize=7.5, color=INK2)
-ax.set_title("No model wins everywhere: WAO variants lead on reversibility and transfer, LAM on action alignment",
+ax.set_title("No model wins everywhere: RAVI variants lead on reversibility and transfer, LAM on action alignment",
              loc="left", fontsize=10.5, color=INK, pad=30)
 fig.text(0.01, -0.16, "Cells show raw means over 5 folds; shading is scaled per column among the four non-oracle "
          "models, so small absolute gaps (e.g. forward error 0.219 vs 0.230) can look large.", fontsize=7.5, color=INK2)

@@ -1,7 +1,7 @@
-"""Animate the WAO pipeline on one held-out episode, showing every variable per step.
+"""Animate the RAVI pipeline on one held-out episode, showing every variable per step.
 
 Input:  viz/export_<dir>_<fold>.npz written by `rave.py --export`, plus the raw HDF5 episode for camera frames.
-Output: viz/wao_pipeline.mp4 (1920x1080).
+Output: viz/ravi_pipeline.mp4 (1920x1080).
 """
 import os, sys
 import h5py, cv2, numpy as np
@@ -136,7 +136,7 @@ arrow((P["k"].x1 + 0.03, P["k"].y0 - 0.005), (cx(P["kap"]), P["kap"].y1 + 0.03))
 
 
 def update(t):
-    title.set_text(f"WAO pipeline  ·  step t = {t} / {T - 1}   ({t * 0.1 * int(E['stride']):.1f} s)")
+    title.set_text(f"RAVI pipeline  ·  step t = {t} / {T - 1}   ({t * 0.1 * int(E['stride']):.1f} s)")
     img.set_data(frames[t])
     for b, v in zip(bo, o[t]): b.set_height(v)
     for b, v in zip(bs, s[t, :-1]): b.set_height(v)
@@ -153,7 +153,7 @@ def update(t):
 
 
 anim = FuncAnimation(fig, update, frames=T, blit=False)
-out = os.path.join(ROOT, "viz", "wao_pipeline.mp4")
+out = os.path.join(ROOT, "viz", "ravi_pipeline.mp4")
 anim.save(out, writer=FFMpegWriter(fps=2, bitrate=6000, codec="libx264", extra_args=["-pix_fmt", "yuv420p"]))
-update(min(rel[0] if rel else T // 2, T - 1)); fig.savefig(os.path.join(ROOT, "viz", "wao_pipeline_still.png"), dpi=80)
+update(min(rel[0] if rel else T // 2, T - 1)); fig.savefig(os.path.join(ROOT, "viz", "ravi_pipeline_still.png"), dpi=80)
 print("saved", out, "steps", T, "releases", rel)
