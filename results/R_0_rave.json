@@ -1,0 +1,22 @@
+{
+ "train": "R",
+ "fold": 0,
+ "model": "rave",
+ "backward_rel_err": 0.2405998706817627,
+ "forward_rel_err": 0.23833611607551575,
+ "drift_residual": 0.9912101030349731,
+ "stage_reach": 0.7,
+ "end_dist_ratio": 0.8526175618171692,
+ "action_cos": 0.1395185887813568,
+ "joint_probe_nmse": 1.05281284765082,
+ "joint_negation_nmse": 1.5423229932785034,
+ "reversibility_auroc": 0.5755693581780539,
+ "n_release_frames": 21,
+ "n_carry_frames": 184,
+ "fewshot_fwd_rel_err": {
+  "0": 0.8696168661117554,
+  "1": 0.8522560000419617,
+  "3": 0.836352527141571,
+  "5": 0.8309785723686218
+ }
+}

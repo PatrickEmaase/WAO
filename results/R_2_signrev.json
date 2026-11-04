@@ -1,0 +1,21 @@
+{
+ "train": "R",
+ "fold": 2,
+ "model": "signrev",
+ "backward_rel_err": 0.23344285786151886,
+ "forward_rel_err": 0.23171007633209229,
+ "stage_reach": 0.9,
+ "end_dist_ratio": 1.4825032949447632,
+ "action_cos": 0.161056250333786,
+ "joint_probe_nmse": 1.039160691887734,
+ "joint_negation_nmse": 1.5037243366241455,
+ "reversibility_auroc": 0.4594594594594595,
+ "n_release_frames": 21,
+ "n_carry_frames": 185,
+ "fewshot_fwd_rel_err": {
+  "0": 0.8563798666000366,
+  "1": 0.8626176714897156,
+  "3": 0.8370418548583984,
+  "5": 0.8284710645675659
+ }
+}

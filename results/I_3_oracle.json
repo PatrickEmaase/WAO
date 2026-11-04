@@ -1,0 +1,16 @@
+{
+ "train": "I",
+ "fold": 3,
+ "model": "oracle",
+ "backward_rel_err": 0.23310618102550507,
+ "forward_rel_err": 0.22994749248027802,
+ "drift_residual": 0.992755651473999,
+ "stage_reach": 1.0,
+ "end_dist_ratio": 0.7564481496810913,
+ "action_cos": 0.10191670805215836,
+ "joint_probe_nmse": 1.2241327309661159,
+ "joint_negation_nmse": 1.4563312530517578,
+ "reversibility_auroc": 0.7578068264342774,
+ "n_release_frames": 17,
+ "n_carry_frames": 162
+}

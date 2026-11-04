@@ -1,0 +1,21 @@
+{
+ "train": "R",
+ "fold": 1,
+ "model": "lam",
+ "backward_rel_err": 0.23133230209350586,
+ "forward_rel_err": 0.22733895480632782,
+ "stage_reach": 0.5,
+ "end_dist_ratio": 0.9045276641845703,
+ "action_cos": 0.23490972816944122,
+ "joint_probe_nmse": 1.2810330598142512,
+ "joint_negation_nmse": 1.6159162521362305,
+ "reversibility_auroc": 0.5703877179287016,
+ "n_release_frames": 21,
+ "n_carry_frames": 183,
+ "fewshot_fwd_rel_err": {
+  "0": 0.8829724192619324,
+  "1": 0.8757290840148926,
+  "3": 0.859315812587738,
+  "5": 0.8510069847106934
+ }
+}
