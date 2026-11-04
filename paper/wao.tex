@@ -20,14 +20,23 @@
 \newcommand{\sym}{\mathrm{sym}}
 \newcommand{\cond}{\mathrm{cond}}
 
-\title[Learning Reverse Action from Video]{WAO: Learning Reverse Action from Video}
+% TODO before submission: confirm affiliations, fill in e-mail addresses, mark the corresponding author.
+\title[Learning Reverse Actions from Video]{Learning Reverse Actions from Video}
 \author{
-	\authname{Anonymous Author$^*$} \\
-	\affaddr{Anonymous Affiliation, Seoul, Korea}
-	\email{anonymous@anonymous.ac.kr} \\
+	\authname{Patrick Mokodir Emaase} \\
+	\affaddr{Department of Computer Science and Engineering, Seoul National University, Seoul, Korea}
+	\email{email@snu.ac.kr} \\
+	\\
+	\authname{Suhyung Choi} \\
+	\affaddr{Department of Computer Science and Engineering, Seoul National University, Seoul, Korea}
+	\email{email@snu.ac.kr} \\
+	\\
+	\authname{Byoung-Tak Zhang$^*$} \\
+	\affaddr{Department of Computer Science and Engineering, Seoul National University, Seoul, Korea}
+	\email{email@snu.ac.kr} \\
 }
-\shortauthors{Anonymous}
-\bottomstuff{$^*$ Corresponding Author}
+\shortauthors{P. M. Emaase, S. Choi and B.-T. Zhang}
+\bottomstuff{$^*$ Corresponding Author (to be confirmed)}
 \category{Smart and Intelligent Computing}
 \keywords{Latent action models; Koopman operator; reversibility; learning from video; robot manipulation; world models}
 
@@ -81,7 +90,7 @@ Because the generator is affine in $z$, every reverse quantity follows in closed
 \paragraph{Contributions.} This paper makes the following contributions.
 \begin{enumerate}
 	\item \textbf{Two reverse actions, defined and derived.} We formalise the time-reversal action and the undo action and show that {\method} gives them in closed form, as $\zb=-z$ under negated drift and $\zundo=-z-2c$, where $c$ is the latent action that best mimics the drift on visited states.
-	\item \textbf{Theory.} We prove that every learned step is exactly invertible, that the time-reversal action holds without any commutativity assumption, and we characterise exactly when a single-step undo exists. We prove that a sign-reversal model in Koopman form is consistent only when the drift vanishes, that the agent/drift split is not identifiable from video when the dynamics have an arrow of time, and we bound the reversibility score by the symmetric part of the generator.
+	\item \textbf{Theory.} We prove that every learned step is exactly invertible, that the time-reversal action holds without any commutativity assumption, and we characterise exactly when a single-step undo exists. We prove that a sign-reversal model in Koopman form is consistent only when the drift vanishes, that the agent/drift split is not identifiable from action-free video and can be anchored with idle or labeled transitions, and we bound the reversibility score by the symmetric part of the generator.
 	\item \textbf{A drift-aware reversal loss} that decodes swapped frame pairs under the reversed drift $-G_0$, so that passive dynamics are not absorbed into the latent action.
 	\item \textbf{A real-robot evaluation} on 100 bimanual ALOHA episodes~\cite{zhao2023aloha} of inserting bread into a toaster and removing it, with 5-fold cross-validation in both transfer directions, supported in the appendices by per-fold results, a controlled two-dimensional study, development runs and a step-by-step walkthrough of every model variable.
 \end{enumerate}
@@ -332,17 +341,13 @@ Taking expectations over visited states, the first-order undo error relative to 
 
 \begin{proposition}[Non-identifiability of the agent/drift split]
 \label{p:gauge}
-(a) For any $c\in\R^m$, the transformation $I_\psi\to I_\psi+c$, $G_0\to G_0-\sum_ic_iG_i$ leaves $A(z_t)$, and hence all forward and backward predictions and the corresponding loss terms, unchanged.
-(b) With the drift-aware reversal term, a shift $c\ne0$ remains loss-preserving if and only if the IDM can add $+c$ on forward-ordered pairs and $-c$ on reverse-ordered pairs, which requires the two orders to be distinguishable from the frames.
+For any $c\in\R^m$, the transformation $z\to z+c$, $G_0\to G_0-\sum_ic_iG_i$ leaves $A(z_t)$, and hence every forward prediction, unchanged.
+The split between agent effects and drift is therefore not identifiable from action-free video.
 \end{proposition}
 \begin{proof}
-(a) $G_0-\sum_ic_iG_i+\sum_i(z_i+c_i)G_i=G_0+\sum_iz_iG_i$.
-(b) Under the shift, the forward pair yields $z'=z+c$ and the reversal term requires $\zb'=-z'=-z-c$ together with $-G_0'+\sum_i\zb'_iG_i=-G_0+\sum_ic_iG_i-\sum_i(z_i+c_i)G_i=-A(z)$, which is again exact.
-Thus the loss is preserved exactly when the IDM outputs $z+c$ on $(o_t,o_{t+1})$ and $-z-c=\zb-c$ on $(o_{t+1},o_t)$, i.e.\ when it adds $+c$ to one order and $-c$ to the other.
-An IDM can do so only if it can tell the two orders apart.
+$G_0-\sum_ic_iG_i+\sum_i(z_i+c_i)G_i=G_0+\sum_iz_iG_i$, so $A(z_t)$ and $K(z_t)$ are the same for every transition, and so is every prediction made from them.
 \end{proof}
-Drift creates exactly such an arrow of time~\cite{wei2018arrow}: a falling slice looks different played forward and backward.
-In the drift-dominated regime, video alone therefore cannot fix the split, and an anchor such as robot-idle steps (Section~4.4) or a few labeled actions is needed.
+Video alone cannot fix where the zero action lies, so {\method} anchors it with a few transitions in which the agent is known to be idle (Section~4.4); a few labeled actions would serve the same purpose.
 
 \begin{proposition}[Sign reversal forces zero drift]
 \label{p:signrev}
