@@ -38,6 +38,7 @@ Each episode is 1,250 steps at 50 Hz with `cam_high`, `cam_left_wrist` and `cam_
 | `code/toy_bik_lam.py` | 2-D toy check of the drift-aware reverse action |
 | `results/` | Per-fold results of the 5-fold cross-validation (50 runs), `summary.txt`, feature check |
 | `paper/ravi.tex` | Journal LaTeX source (JCSE template), single self-contained file; `ravi.bib`, `ravi.pdf`, `figs/` |
+| `paper/RAVI_Main_2026.tex` | Main paper without appendices (10 pages), `RAVI_Main_2026.pdf`; built from `ravi.tex` by `make_main.py` |
 | `ravi_pipeline.mp4` | Pipeline video |
 
 In the code, RAVI is still named `rave` (its earlier working name); the model keys in `results/` follow the code.
