@@ -37,7 +37,7 @@ Each episode is 1,250 steps at 50 Hz with `cam_high`, `cam_left_wrist` and `cam_
 | `code/feat_check.py` | Stage-decoding feature check |
 | `code/toy_bik_lam.py` | 2-D toy check of the drift-aware reverse action |
 | `results/` | Per-fold results of the 5-fold cross-validation (50 runs), `summary.txt`, feature check |
-| `paper/` | Journal draft (JCSE template), figures, bibliography |
+| `paper/ravi.tex` | Journal LaTeX source (JCSE template), single self-contained file; `ravi.bib`, `ravi.pdf`, `figs/` |
 | `ravi_pipeline.mp4` | Pipeline video |
 
 In the code, RAVI is still named `rave` (its earlier working name); the model keys in `results/` follow the code.
@@ -62,5 +62,5 @@ python viz_ravi.py viz/export_I_0.npz
 Build the paper:
 
 ```bash
-cd paper && pdflatex wao && bibtex wao && pdflatex wao && pdflatex wao
+cd paper && pdflatex ravi && bibtex ravi && pdflatex ravi && pdflatex ravi
 ```

@@ -1,5 +1,5 @@
 % RAVI (Reverse Action from Video): Learning Reverse Actions from Video -- JCSE (KIISE) regular paper draft.
-% Build: pdflatex wao; bibtex wao; pdflatex wao; pdflatex wao
+% Build: pdflatex ravi; bibtex ravi; pdflatex ravi; pdflatex ravi
 \documentclass{jcse}
 
 \usepackage{url}
@@ -8,6 +8,10 @@
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{multirow}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,calc}
+\definecolor{actc}{HTML}{2A78D6}  % agent / action
+\definecolor{driftc}{HTML}{EB6834} % drift
 \usepackage{algorithm}
 \usepackage{algpseudocode}
 \usepackage{flushend}
@@ -166,14 +170,81 @@ Our goal is to learn, from forward videos alone, a model that (i) predicts forwa
 % =====================================================================
 \section{The {\method} Model} \label{s:method}
 
-\begin{figure}[t]
-	\centering
-	\includegraphics[width=\columnwidth]{figs/fig_pipeline.png}
-	\caption{{\method} pipeline with input, latent and output dimensions on the ALOHA toaster data. A $480\times848$ frame becomes a 128-D feature $o_t$, a 65-D lifted state $s_t$ and a 16-D latent action $z_t$; one $65\times65$ operator $K(z_t)$ yields the forward step, the backward step and both reverse actions.}
-	\label{f:pipeline}
-\end{figure}
+\begin{figure*}[t]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+	font=\footnotesize, >={Stealth[length=2.2mm]},
+	box/.style={draw=black!55, rounded corners=3pt, align=center, inner sep=3pt, fill=white},
+	driftbox/.style={box, draw=driftc, fill=driftc!12, very thick, text width=2.1cm},
+	actbox/.style={box, draw=actc, fill=actc!12, very thick},
+	outbox/.style={box, text width=5.7cm, align=left},
+	panel/.style={draw=black!20, fill=black!3, rounded corners=6pt},
+	ttl/.style={font=\small\bfseries, anchor=west},
+	note/.style={font=\scriptsize, align=center},
+	ball/.style={circle, minimum size=5mm, inner sep=0pt},
+]
+% ---------- panels
+\draw[panel] (-0.2,0.75) rectangle (5.75,7.05);
+\draw[panel] (6.0,0.75) rectangle (13.55,7.05);
+\draw[panel] (13.8,0.75) rectangle (20.3,7.05);
+\node[ttl] at (-0.05,6.72) {(a) Reverse actions under drift};
+\node[ttl] at (6.15,6.72) {(b) RAVI latent dynamics};
+\node[ttl] at (13.95,6.72) {(c) Closed form, no reverse data};
 
-{\method} learns one set of latent dynamics from forward videos and derives every reverse quantity from it (Fig.~\ref{f:pipeline}).
+% ---------- (a) a falling object seen three ways
+\foreach \x in {1.0,2.85,4.7} { \draw[black!45, thick] (\x-0.7,2.3) -- (\x+0.7,2.3); }
+% forward clip: the object falls under drift while the agent is idle
+\node[ball, draw=black!40, dashed] (f0) at (1.0,5.7) {};
+\node[ball, fill=driftc!75] (f1) at (1.0,2.6) {};
+\draw[->, driftc, very thick] (f0) -- node[right, note]{drift\\$G_0$} (f1);
+\node[note] at (1.0,1.55) {\textbf{forward clip}\\agent idle: $z=0$};
+% reversed clip: rises with zero action under reversed drift
+\node[ball, draw=black!40, dashed] (r0) at (2.85,2.6) {};
+\node[ball, fill=black!35] (r1) at (2.85,5.7) {};
+\draw[->, black!60, very thick, dashed] (r0) -- node[right, note]{$-G_0$} (r1);
+\node[note] at (2.85,1.55) {\textbf{reversed clip}\\$\bar z=-z=0$};
+% undo: the agent must push against the drift
+\node[ball, draw=black!40, dashed] (u0) at (4.7,2.6) {};
+\node[ball, fill=actc!75] (u1) at (4.7,5.7) {};
+\draw[->, actc, line width=2pt] (u0) -- node[left, note]{push} (u1);
+\draw[->, driftc, thick] (5.3,5.4) -- node[right, note]{$G_0$} (5.3,4.4);
+\node[note] at (4.7,1.55) {\textbf{undo}\\$z_{\mathrm{undo}}=-2c\neq0$};
+
+% ---------- (b) model
+\node[box] (frames) at (7.35,5.95) {frames\\$o_t,\ o_{t+1}$};
+\node[box] (enc) at (7.35,4.45) {encoder $\phi$\\$s_t=[\phi(o_t);1]$};
+\node[actbox] (idm) at (11.55,5.95) {inverse dynamics $I_\psi$\\$z_t=I_\psi(o_t,o_{t+1})$};
+\node[driftbox] (g0) at (8.95,2.95) {\textbf{drift} $G_0$\\shared physics};
+\node[actbox, text width=2.1cm] (gi) at (12.15,2.95) {\textbf{actions} $G_i$\\agent motion};
+\node[font=\footnotesize] (plus) at (10.55,2.95) {$+\,\sum_i z_i$};
+\node[draw=black!65, rounded corners=4pt, thick, fit=(g0)(gi)(plus), inner sep=5pt] (K) {};
+\node[note] at (10.55,1.75) {Koopman step $K(z)=\exp\!\big(G_0+\sum_i z_iG_i\big)$};
+\node[note] at (10.55,1.2) {$s_{t+1}=K(z_t)\,s_t$, decoded by $D$ to $\hat o_{t+1}$};
+\draw[->, thick] (frames) -- (enc);
+\draw[->, thick] (frames) -- (idm);
+\draw[->, thick] (enc.south) |- node[pos=0.3, left, note]{$s_t$} (K.west);
+\draw[->, thick, actc] (idm.south) -- node[right, note]{$z_t$} (idm.south |- K.north);
+
+% ---------- (c) outputs
+\node[outbox] (o1) at (17.1,5.95) {\textbf{Backward step}\\$s_t=K(z)^{-1}s_{t+1}$, exact inverse};
+\node[outbox] (o2) at (17.1,4.7) {\textbf{Time-reversal action}\\$\bar z=-z$ in the reversed world ($-G_0$)};
+\node[outbox, draw=actc, very thick] (o3) at (17.1,3.45) {\textbf{Undo action}\\$z_{\mathrm{undo}}=-z-2c$, with $\sum_i c_iG_i\approx G_0$};
+\node[outbox] (o4) at (17.1,2.2) {\textbf{Reversibility score}\\$\kappa=\mathrm{cond}\,K(z)$: 1 if rigid, large if dissipative};
+\coordinate (bus) at ($(K.east)+(0.25,0)$);
+\draw[thick] (K.east) -- (bus);
+\foreach \o in {o1,o2,o3,o4} { \draw[->, thick] (bus) |- (\o.west); }
+
+% ---------- bottom strip: learning and generalization
+\draw[panel, fill=actc!5] (-0.2,-0.55) rectangle (20.3,0.55);
+\node[anchor=west] at (0.0,0.25) {\textbf{Learn} from forward videos only: forward, exact-inverse and drift-aware reversal losses; robot-idle steps anchor $z=0$.};
+\node[anchor=west] at (0.0,-0.25) {\textbf{Generalize} to the reverse task: keep the encoder $\phi$ and the drift $G_0$ (scene physics); adapt only $I_\psi$ with $k$ episodes.};
+\end{tikzpicture}}
+\caption{RAVI at a glance. (a) With drift, a reverse action is not unique: a falling object rises with zero action in the reversed clip, but undoing the fall in the real world needs a push against the drift. (b) RAVI lifts frames to a state $s_t$ and lets the latent action act through a Koopman operator whose drift generator $G_0$ (scene physics, shared across tasks) is separate from the action generators $G_i$ (agent motion). (c) Every reverse quantity follows in closed form from the forward model. The design is task-independent; the instantiation used in our experiments is shown in \ref{a:impl} (Fig.~\ref{f:pipeline}).}
+\label{f:concept}
+\end{figure*}
+
+{\method} learns one set of latent dynamics from forward videos and derives every reverse quantity from it (Fig.~\ref{f:concept}).
 Its central assumption is that a task and its reverse share the scene's state space and its passive physics, but not the agent's motions.
 Putting bread into a toaster and taking it out visit the same plate and slot states under the same gravity, yet use different grasps and paths.
 {\method} therefore shares the encoder and the drift across tasks and lets only the latent actions differ.
@@ -403,7 +474,7 @@ Gripper positions are used only to locate releases for evaluation: a release is 
 \subsection{Features and Implementation}
 The frozen encoder is DINOv2 ViT-S/14~\cite{oquab2024dinov2} on the top camera, resized to $224\times392$.
 We concatenate the CLS token (384-D) with a $2\times4$ average-pooled patch grid (3,072-D), standardise, and reduce to 128 dimensions by PCA fitted on training episodes.
-A feature check confirms that this representation encodes the scene state: a linear probe decodes the three scene stages with 97.5\% balanced accuracy (chance 33.3\%; Appendix~\ref{a:dev}).
+A feature check confirms that this representation encodes the scene state: a linear probe decodes the three scene stages with 97.5\% balanced accuracy (chance 33.3\%; \ref{a:dev}).
 The head $\phi$ and decoder are two-layer MLPs with 256 hidden units, $d=64$ and $m=16$.
 $K(z)$ is computed with a batched matrix exponential based on scaling and squaring~\cite{higham2005scaling}.
 All models share the encoder, decoder and budget: 4,000 Adam steps, batch size 512, learning rate $10^{-3}$, $\lambda_b=\lambda_r=\lambda_a=1$ and $\lambda_v=10^{-3}$.
@@ -508,9 +579,9 @@ For I$\to$R, however, the error stays near the no-change level of 1.0, so the re
 
 \subsection{Further Results}
 No model recovers the real reverse joint motion: every joint-probe error exceeds 1.0, although all beat negated, time-reversed joint deltas (1.58 and 1.53), which confirms that removal is not insertion played backward.
-Appendix~\ref{a:cv} gives all metrics at a glance, the few-shot errors at every $k$, per-fold tables and a step-by-step walkthrough of every model variable on a held-out episode.
-Appendix~\ref{a:toy} tests the theory on a two-dimensional system with known drift, where the derived undo action returns the state about four times closer than negating the action.
-Appendix~\ref{a:dev} reports the development runs behind the step size, the generator penalty, the drift fit, the release labels and the feature choice, and Appendix~\ref{a:impl} lists all implementation settings.
+\ref{a:cv} gives all metrics at a glance, the few-shot errors at every $k$, per-fold tables and a step-by-step walkthrough of every model variable on a held-out episode.
+\ref{a:toy} tests the theory on a two-dimensional system with known drift, where the derived undo action returns the state about four times closer than negating the action.
+\ref{a:dev} reports the development runs behind the step size, the generator penalty, the drift fit, the release labels and the feature choice, and \ref{a:impl} lists all implementation settings.
 
 
 % =====================================================================
@@ -548,9 +619,279 @@ Multi-step undo, stronger anchors and deformable objects are the next steps.
 \ack{To be added after review.}
 
 \bibliographystyle{IEEEtran}
-\bibliography{wao}
+\bibliography{ravi}
 
 \clearpage
-\input{appendix.tex}
+% =====================================================================
+\appendix
+
+\section{Additional Cross-Validation Results} \label{a:cv}
+
+All results in this appendix come from the same 50 cross-validation runs as Section~\ref{s:results} (5 folds $\times$ 5 models $\times$ 2 directions) unless stated otherwise.
+
+\subsection{All Metrics at a Glance}
+
+\begin{figure*}[t]
+	\centering
+	\includegraphics[width=0.92\textwidth]{figs/fig_scorecard_heatmap.pdf}
+	\caption{All metrics for all models and both directions. Cells show raw means over 5 folds; shading is scaled per column among the four non-oracle models, so small absolute gaps can look large.}
+	\label{f:scorecard}
+\end{figure*}
+
+Fig.~\ref{f:scorecard} shows that no model wins everywhere.
+The {\method} variants lead on reversibility detection, end distance for R$\to$I and transfer; the plain LAM leads on action alignment and on end distance for I$\to$R; and the sign-reversal LAM has the lowest joint-probe error despite its divergent rollouts.
+No model recovers the real reverse joint motion: every probe error exceeds 1.0, although all beat negated, time-reversed joint deltas, which confirms that removal is not insertion played backward.
+
+\subsection{Few-Shot Adaptation at Every $k$}
+
+\begin{table*}
+	\centering
+	\caption{Opposite-task forward error after fine-tuning only the IDM on $k$ episodes of the opposite task, mean $\pm$ standard deviation over 5 folds. Errors are relative to predicting no change. Best value per column in bold.}
+	\label{t:fewshot}
+	\footnotesize
+	\setlength{\tabcolsep}{4pt}
+	\begin{tabular}{lcccccccc}
+		\toprule
+		& \multicolumn{4}{c}{I$\to$R} & \multicolumn{4}{c}{R$\to$I} \\
+		\cmidrule(r){2-5} \cmidrule(l){6-9}
+		Model & $k=0$ & $k=1$ & $k=3$ & $k=5$ & $k=0$ & $k=1$ & $k=3$ & $k=5$ \\
+		\midrule
+		LAM & 1.136$\pm$0.035 & 1.115$\pm$0.029 & 1.101$\pm$0.027 & 1.099$\pm$0.026 & 0.911$\pm$0.032 & 0.892$\pm$0.023 & 0.878$\pm$0.024 & 0.872$\pm$0.024 \\
+		Sign-rev. LAM & 1.090$\pm$0.030 & 1.078$\pm$0.021 & 1.064$\pm$0.021 & 1.060$\pm$0.021 & 0.870$\pm$0.029 & 0.865$\pm$0.029 & 0.846$\pm$0.027 & 0.840$\pm$0.027 \\
+		{\method} w/o anchor & \textbf{1.034}$\pm$0.029 & \textbf{1.020}$\pm$0.020 & \textbf{1.011}$\pm$0.017 & \textbf{1.008}$\pm$0.019 & \textbf{0.821}$\pm$0.033 & \textbf{0.818}$\pm$0.031 & \textbf{0.801}$\pm$0.030 & \textbf{0.796}$\pm$0.030 \\
+		{\method} & 1.062$\pm$0.030 & 1.056$\pm$0.024 & 1.037$\pm$0.025 & 1.033$\pm$0.023 & 0.837$\pm$0.032 & 0.840$\pm$0.022 & 0.813$\pm$0.025 & 0.808$\pm$0.026 \\
+		\bottomrule
+	\end{tabular}
+\end{table*}
+
+Table~\ref{t:fewshot} lists the few-shot errors behind Fig.~\ref{f:fewshot}.
+The two {\method} variants are the two best models at every $k$ in both directions, and the gap to the LAM baselines is present already at $k=0$, before any adaptation.
+
+\subsection{Reference Values}
+Negated, time-reversed joint deltas of the paired forward episode reach a joint-probe error of $1.583\pm0.090$ for I$\to$R and $1.533\pm0.044$ for R$\to$I, worse than every learned model in Table~\ref{t:main}.
+Stage reach is noisy with 10 test episodes per fold (Table~\ref{t:main}); the end-distance ratio is the more stable rollout measure.
+
+\subsection{Per-Fold Results}
+Tables~\ref{t:perfoldI} and~\ref{t:perfoldR} give the per-fold values of the main reverse-direction metrics.
+The sign-reversal LAM has an end-distance ratio above 1.29 in every fold of both directions, while every Koopman model stays below 1.0 in every fold.
+
+\begin{table*}
+\centering
+\caption{Per-fold results, trained on insertion, tested on removal (I$\to$R). Folds are disjoint sets of test episodes.}
+\label{t:perfoldI}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{llccccc}
+\toprule
+Metric & Model & Fold 0 & Fold 1 & Fold 2 & Fold 3 & Fold 4 \\
+\midrule
+\multirow{5}{*}{End-distance ratio $\downarrow$} & LAM & 0.611 & 0.696 & 0.785 & 0.789 & 0.662 \\
+ & Sign-rev. LAM & 1.694 & 1.573 & 1.296 & 1.783 & 1.415 \\
+ & \method{} w/o anchor & 0.790 & 0.779 & 0.736 & 0.716 & 0.660 \\
+ & \method & 0.783 & 0.725 & 0.752 & 0.873 & 0.710 \\
+ & Oracle & 0.697 & 0.666 & 0.642 & 0.756 & 0.747 \\
+\midrule
+\multirow{5}{*}{Reversibility AUROC $\uparrow$} & LAM & 0.795 & 0.710 & 0.695 & 0.801 & 0.685 \\
+ & Sign-rev. LAM & 0.670 & 0.647 & 0.400 & 0.790 & 0.542 \\
+ & \method{} w/o anchor & 0.752 & 0.753 & 0.725 & 0.777 & 0.656 \\
+ & \method & 0.767 & 0.768 & 0.730 & 0.794 & 0.673 \\
+ & Oracle & 0.740 & 0.772 & 0.696 & 0.758 & 0.691 \\
+\midrule
+\multirow{5}{*}{Action alignment $\uparrow$} & LAM & 0.181 & 0.161 & 0.207 & 0.172 & 0.163 \\
+ & Sign-rev. LAM & 0.146 & 0.125 & 0.153 & 0.141 & 0.132 \\
+ & \method{} w/o anchor & 0.121 & 0.098 & 0.124 & 0.120 & 0.110 \\
+ & \method & 0.139 & 0.113 & 0.143 & 0.130 & 0.125 \\
+ & Oracle & 0.106 & 0.194 & 0.077 & 0.102 & 0.052 \\
+\midrule
+\multirow{4}{*}{Few-shot error, $k=5$ $\downarrow$} & LAM & 1.088 & 1.094 & 1.065 & 1.144 & 1.106 \\
+ & Sign-rev. LAM & 1.071 & 1.056 & 1.021 & 1.076 & 1.076 \\
+ & \method{} w/o anchor & 1.004 & 1.015 & 0.976 & 1.033 & 1.011 \\
+ & \method & 1.046 & 1.035 & 0.993 & 1.062 & 1.030 \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{table*}
+\centering
+\caption{Per-fold results, trained on removal, tested on insertion (R$\to$I). Folds are disjoint sets of test episodes.}
+\label{t:perfoldR}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{llccccc}
+\toprule
+Metric & Model & Fold 0 & Fold 1 & Fold 2 & Fold 3 & Fold 4 \\
+\midrule
+\multirow{5}{*}{End-distance ratio $\downarrow$} & LAM & 0.948 & 0.905 & 0.911 & 0.962 & 0.830 \\
+ & Sign-rev. LAM & 1.817 & 2.135 & 1.483 & 2.052 & 1.811 \\
+ & \method{} w/o anchor & 0.714 & 0.802 & 0.796 & 0.767 & 0.750 \\
+ & \method & 0.853 & 0.815 & 0.839 & 0.741 & 0.962 \\
+ & Oracle & 0.588 & 0.594 & 0.594 & 0.627 & 0.615 \\
+\midrule
+\multirow{5}{*}{Reversibility AUROC $\uparrow$} & LAM & 0.554 & 0.570 & 0.593 & 0.792 & 0.692 \\
+ & Sign-rev. LAM & 0.304 & 0.510 & 0.459 & 0.292 & 0.456 \\
+ & \method{} w/o anchor & 0.524 & 0.535 & 0.635 & 0.590 & 0.586 \\
+ & \method & 0.576 & 0.590 & 0.689 & 0.635 & 0.678 \\
+ & Oracle & 0.611 & 0.630 & 0.724 & 0.691 & 0.663 \\
+\midrule
+\multirow{5}{*}{Action alignment $\uparrow$} & LAM & 0.230 & 0.235 & 0.268 & 0.228 & 0.241 \\
+ & Sign-rev. LAM & 0.153 & 0.146 & 0.161 & 0.140 & 0.163 \\
+ & \method{} w/o anchor & 0.124 & 0.119 & 0.143 & 0.126 & 0.142 \\
+ & \method & 0.140 & 0.125 & 0.149 & 0.143 & 0.162 \\
+ & Oracle & 0.100 & 0.189 & 0.049 & 0.097 & 0.044 \\
+\midrule
+\multirow{4}{*}{Few-shot error, $k=5$ $\downarrow$} & LAM & 0.918 & 0.851 & 0.875 & 0.860 & 0.857 \\
+ & Sign-rev. LAM & 0.885 & 0.808 & 0.828 & 0.852 & 0.824 \\
+ & \method{} w/o anchor & 0.825 & 0.744 & 0.790 & 0.823 & 0.802 \\
+ & \method & 0.831 & 0.770 & 0.789 & 0.840 & 0.811 \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+
+\subsection{Walkthrough of the Model Variables}
+
+\begin{figure*}[t]
+	\centering
+	\includegraphics[width=0.8\textwidth]{figs/fig_walkthrough.png}
+	\caption{All {\method} variables at step 26 of a held-out insertion episode (13.0\,s, the first release): camera frame, feature $o_t$, lifted state $s_t$, latent action $z_t$, step operator $K(z_t)-I$, drift $G_0$, reverse actions, prediction errors and the reversibility score $\kappa_t$. A video of all 49 steps accompanies the paper.}
+	\label{f:walk}
+\end{figure*}
+
+Fig.~\ref{f:walk} shows every variable of a model trained on insertion (fold 0), on a held-out insertion episode.
+Reversal consistency is strong: the IDM output on the swapped pair nearly mirrors $-z_t$ (cosine $+0.95$ at the release step).
+Because the drift residual is 0.992 for this model, $\zundo$ is almost identical to $-z_t$, in line with Proposition~\ref{p:undo}(c).
+In this episode $\kappa_t$ does not peak at the release itself (step 26, $\kappa_t=3.5$); its largest values occur at steps 10, 33 and 43, likely other contact events.
+The AUROC of Table~\ref{t:main} is an aggregate over many episodes, and single episodes can be noisier.
+
+% =====================================================================
+\section{Controlled Study with Known Drift} \label{a:toy}
+
+\begin{table}
+	\centering
+	\caption{Two-dimensional point with constant drift $g$, observed through a random nonlinear lift. The analytic undo action is $u'=-u-2g$. Return error is the simulator distance to $p_t$ after executing the undo action, divided by the step length.}
+	\label{t:toy}
+	\footnotesize
+	\setlength{\tabcolsep}{4pt}
+	\begin{tabular}{lcc}
+		\toprule
+		Quantity & No reversal loss & Reversal loss \\
+		\midrule
+		Forward relative error & 0.023 & 0.013 \\
+		Backward relative error (never trained) & 0.012 & 0.009 \\
+		$\cos(\text{IDM}(o_{t+1},o_t),-z)$ & 0.62 & 0.995 \\
+		No-op code size $\|z_{\text{no-op}}\|/\mathrm{rms}(z)$ & 0.36 & 0.48 \\
+		Linear probe $R^2$, $z\to u$ & 0.84 & 0.89 \\
+		Return error, model undo action & 0.34 & 0.26 \\
+		Return error, naive $u'=-u$ & 1.15 & 1.15 \\
+		Mean $|u_{\text{undo}}-(-u-2g)|$ (naive: 0.5) & 0.19 & 0.15 \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+To test the theory where the ground truth is known, we simulate a two-dimensional point $p_{t+1}=p_t+\Delta t\,(g+u)$ with constant drift $g=(0,-0.5)$, actions $u\in[-1,1]^2$ and $\Delta t=0.1$, observed only through a fixed random two-layer $\tanh$ lift to 32 dimensions.
+A Koopman model with $d=8$, $m=2$ and a constant coordinate is trained for 6,000 steps on forward transitions only, once without and once with the reversal-consistency loss (Table~\ref{t:toy}).
+Errors are relative to predicting no change and evaluated on 8,000 fresh transitions.
+\begin{itemize}
+	\item Backward prediction through the exact inverse is as accurate as forward prediction although it is never trained, as Proposition~\ref{p:inverse} predicts.
+	\item The IDM is not reversal-consistent by itself (cosine 0.62); the reversal loss makes it so (0.995) and, without an anchor, moves part of the drift into the latent code (no-op code size 0.48), as Proposition~\ref{p:gauge} allows.
+	\item The undo action is found by planning in the model, mapped to real actions with a linear probe fitted on labeled transitions (which fixes the gauge), and executed in the simulator. It returns the point to within 0.26--0.34 step lengths, whereas naively negating the action misses by 1.15, and the recovered action is close to the analytic $-u-2g$. The remaining error tracks the probe $R^2$ of 0.84--0.89.
+\end{itemize}
+
+% =====================================================================
+\section{Development Runs} \label{a:dev}
+
+The runs in this appendix were made while designing the evaluation, on insertion, fold 0, with one run per setting.
+They are not cross-validated and are reported for completeness.
+Where marked, the reversibility AUROC used an earlier release rule that counted gripper openings without a prior hold; that rule fired 3--5 times per episode and was replaced by the rule in Section~\ref{s:setup}, so those AUROC values are not comparable with Table~\ref{t:main}.
+
+\begin{table*}
+	\centering
+	\caption{Development runs (insertion, fold 0, one run each). Errors are relative to predicting no change. $^\dagger$AUROC with the earlier release rule (not comparable with Table~\ref{t:main}).}
+	\label{t:dev}
+	\footnotesize
+	\setlength{\tabcolsep}{4pt}
+	\begin{tabular}{llcccccc}
+		\toprule
+		Setting & Model & Forward err. & Backward err. & End dist. & Action align. & Joint probe & AUROC \\
+		\midrule
+		\multirow{4}{*}{Step 0.1\,s} & Sign-rev. LAM & 0.508 & 0.512 & $7.5\times10^5$ & 0.063 & 0.981 & 0.379$^\dagger$ \\
+		& {\method} w/o anchor & 0.525 & 0.525 & 1.033 & 0.058 & 0.975 & 0.460$^\dagger$ \\
+		& {\method} & 0.538 & 0.540 & 0.981 & 0.056 & 0.982 & 0.426$^\dagger$ \\
+		& Oracle & 0.521 & 0.522 & 0.851 & 0.032 & 1.048 & 0.436$^\dagger$ \\
+		\midrule
+		\multirow{4}{*}{Step 0.5\,s} & Sign-rev. LAM & 0.227 & 0.231 & 1.477 & 0.140 & 1.010 & 0.370$^\dagger$ \\
+		& {\method} w/o anchor & 0.230 & 0.235 & 0.959 & 0.116 & 1.051 & 0.482$^\dagger$ \\
+		& {\method} & 0.235 & 0.241 & 1.049 & 0.137 & 1.047 & 0.472$^\dagger$ \\
+		& Oracle & 0.232 & 0.233 & 0.734 & 0.086 & 1.280 & 0.473$^\dagger$ \\
+		\midrule
+		\multirow{3}{*}{\shortstack[l]{Step 0.5\,s,\\new release rule}} & LAM & 0.231 & 0.232 & 0.684 & 0.208 & 1.147 & 0.580 \\
+		& {\method}, $\lambda_v=10^{-5}$ & 0.239 & 0.243 & 1.345 & 0.117 & 1.047 & 0.711 \\
+		& {\method}, $\lambda_v=0$ & 0.239 & 0.244 & 1.389 & 0.117 & 1.046 & 0.711 \\
+		\bottomrule
+	\end{tabular}
+\end{table*}
+
+\paragraph{Step size.}
+A step of 0.1\,s left forward error at about 0.5 of the no-change baseline for every model, because consecutive frames barely differ, and the sign-reversal LAM's rollout diverged by five orders of magnitude (Table~\ref{t:dev}).
+A step of 0.5\,s, trained on all five phase offsets, halved the error, and we use it throughout.
+
+\paragraph{Symmetric action blocks.}
+Weakening the penalty on the symmetric action blocks ($\lambda_v=10^{-5}$ or 0) left every metric and the drift residual (0.992) essentially unchanged.
+The residual therefore does not come from the penalty, which led us to fit $c$ on visited states.
+
+\paragraph{Fitting the drift-equivalent action.}
+Fitting $c$ on whole matrices, $\min_c\|G_0-\sum_ic_iG_i\|_F$, gave a residual of 0.991 on this fold; fitting on visited states, Eq.~(\ref{e:undo}), gives $0.988\pm0.005$ across folds.
+Both are near 1 because 16 action generators cannot cancel the drift's effect in a 65-D lifted space.
+
+\paragraph{Release labels.}
+With a hold requirement of 1\,s before a gripper opening past 0.9, exactly two releases are found in 41 of 50 insertion and 49 of 50 removal episodes, matching the two slices per episode.
+Without the hold requirement, most episodes showed 3--5 spurious releases, because the gripper passes through the holding range while opening and closing.
+
+\paragraph{Feature check.}
+To rule out the visual representation as the cause of transfer limits, we trained a linear probe (logistic regression on 256 PCA dimensions, 5-fold episode split) to decode the three scene stages from 40 episodes at 2\,Hz, using the release-based stage labels.
+Table~\ref{t:feat} shows that every variant decodes the stage almost perfectly, so we keep the top-camera CLS token with a $2\times4$ grid.
+
+\begin{table}
+	\centering
+	\caption{Stage decoding from features, balanced accuracy over 5 episode folds (chance 0.333).}
+	\label{t:feat}
+	\footnotesize
+	\begin{tabular}{lc}
+		\toprule
+		Features & Balanced accuracy \\
+		\midrule
+		Top camera, CLS + $2\times4$ grid (used) & 0.975$\pm$0.003 \\
+		Top camera, CLS + $4\times7$ grid & 0.979$\pm$0.002 \\
+		Wrist cameras, CLS + $2\times4$ grid & 0.982$\pm$0.009 \\
+		Top $4\times7$ + wrists & 0.984$\pm$0.003 \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+% =====================================================================
+\section{Implementation Details} \label{a:impl}
+
+\begin{figure}[t]
+	\centering
+	\includegraphics[width=0.7\columnwidth]{figs/fig_pipeline.png}
+	\caption{Instantiation of {\method} used in our experiments, with the dimensions at each stage on the ALOHA toaster data. A $480\times848$ frame becomes a 128-D feature $o_t$, a 65-D lifted state $s_t$ and a 16-D latent action $z_t$; one $65\times65$ operator $K(z_t)$ yields the forward step, the backward step and both reverse actions.}
+	\label{f:pipeline}
+\end{figure}
+
+Fig.~\ref{f:pipeline} shows how Fig.~\ref{f:concept} is instantiated on the ALOHA toaster data.
+
+All models share the following settings.
+\begin{itemize}
+	\item \textbf{Input:} top camera, $480\times848$, resized to $224\times392$; frozen DINOv2 ViT-S/14; CLS token (384) and a $2\times4$ pooled patch grid (3,072), standardised and reduced by PCA to 128 dimensions with unit average variance.
+	\item \textbf{Networks:} head $\phi$ and decoder are MLPs with two hidden layers of 256 units and GELU; the IDM is an MLP on $[o_t,o_{t+1},o_{t+1}-o_t]$ (384 inputs, 16 outputs).
+	\item \textbf{Latents:} $d=64$ plus the constant coordinate; $m=16$, with Gaussian noise of 0.05 on $z$ during training.
+	\item \textbf{Data:} one step is 0.5\,s (5 frames at 10\,Hz), using all 5 phase offsets for training; the anchor set is the slowest 15\% of steps by joint speed.
+	\item \textbf{Optimisation:} Adam, learning rate $10^{-3}$, batch 512, 4,000 steps; $\lambda_b=\lambda_r=\lambda_a=1$, $\lambda_v=10^{-3}$; $c$ is fitted on 2,000 training latents; few-shot adaptation uses 500 IDM steps with batch 256.
+	\item \textbf{Compute:} one A100 80\,GB GPU, about 10 minutes per run.
+\end{itemize}
+LAM baselines use MLP forward and backward models with the same hidden sizes; their reversibility score is the condition number of the forward-model Jacobian with respect to the lifted state.
+The 50 cross-validation runs were scheduled two to three at a time to respect the GPU quota of the shared server.
+Code, per-fold results and the walkthrough video are released with the paper.
+
 
 \end{document}
