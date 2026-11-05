@@ -1,0 +1,53 @@
+% Cover letter to the Editor-in-Chief, JCSE. One page.
+% Build: pdflatex cover_letter
+\documentclass[11pt,a4paper]{article}
+\usepackage[a4paper,top=18mm,bottom=16mm,left=22mm,right=22mm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[hidelinks]{hyperref}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5.5pt}
+\pagestyle{empty}
+
+\begin{document}
+
+\begin{flushright}
+\textbf{Byoung-Tak Zhang}\\
+Department of Computer Science and Engineering\\
+Seoul National University, Seoul, Korea\\
+\href{mailto:btzhang@snu.ac.kr}{btzhang@snu.ac.kr}\\[4pt]
+\today
+\end{flushright}
+
+The Editor-in-Chief\\
+\emph{Journal of Computing Science and Engineering} (JCSE)\\
+Korean Institute of Information Scientists and Engineers
+
+\textbf{Re: Submission of the regular paper ``Learning Reverse Actions from Video''}
+
+Dear Editor-in-Chief,
+
+On behalf of my co-authors, Patrick Mokodir Emaase (Department of Computer Science and Engineering, Seoul National University) and Suhyung Choi (AI Institute, Seoul National University), I am pleased to submit the manuscript ``Learning Reverse Actions from Video'' for consideration as a Regular Paper in the \emph{Smart and Intelligent Computing} category of JCSE.
+
+Robots and other agents increasingly learn from video, which is abundant, rather than from action-labelled demonstrations, which are scarce. Latent action models make this possible, but they learn only in forward time. Undoing a mistake, planning backward from a goal, resetting without human help and judging whether a step can be reversed all need the reverse direction. Recent methods obtain reversal by making the action of a reversed frame pair the negative of the forward action. Our manuscript shows that this fails whenever the scene moves on its own, for example under gravity, because the passive dynamics are absorbed into the agent's action.
+
+We propose RAVI (Reverse Action from Video), in which a latent action acts on a learned state through a Koopman operator whose drift generator, the scene's own physics, is kept separate from the action generators. The main contributions are:
+\begin{itemize}\setlength{\itemsep}{1pt}\setlength{\parskip}{0pt}
+	\item a precise distinction between the \emph{time-reversal} action and the \emph{undo} action, both obtained in closed form from a model trained on forward videos alone, together with an exact backward step and a per-step reversibility score;
+	\item a theoretical analysis with proofs: exact invertibility of every learned step, the conditions under which a single-step undo exists, the non-identifiability of the agent/drift split from video, and a proof that sign reversal is consistent only when the drift vanishes;
+	\item an evaluation on 100 real bimanual robot episodes of inserting bread into a toaster and removing it, with 5-fold cross-validation in both directions. RAVI keeps reverse rollouts stable where sign reversal diverges, detects irreversible moments on par with a plain latent action model and transfers best to the reverse task. We also report its limits candidly, including that undoing a dropped object in a single step remains out of reach.
+\end{itemize}
+
+We believe the work suits the readership of JCSE because it joins learning from video, dynamical-systems theory and robot manipulation, and because its formulation is task-independent and applies wherever an agent must reason about what can and cannot be undone.
+
+We confirm that the manuscript is original, has not been published, and is not under consideration by any other journal. All authors have approved the submission and declare no conflicts of interest. The code, the per-fold results and a video of the model's variables will be made publicly available upon acceptance.
+
+Thank you for considering our manuscript. We look forward to hearing from you.
+
+Sincerely,
+
+\vspace{6pt}
+Byoung-Tak Zhang\\
+Corresponding author, on behalf of P.M. Emaase and S-H. Choi
+
+\end{document}

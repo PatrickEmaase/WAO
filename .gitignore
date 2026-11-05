@@ -12,3 +12,4 @@ paper/sheet.png
 *.npz
 __pycache__/
 paper/pg-*.png
+paper/cl-*.png
