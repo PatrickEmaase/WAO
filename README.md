@@ -11,7 +11,7 @@ undo action:            z_undo = -z - 2c,   sum_i c_i G_i ~ G0
 reversibility score:    kappa_t = cond K(z_t)
 ```
 
-Paper: *Learning Reverse Actions from Video*, P. M. Emaase and B.-T. Zhang (JCSE draft, `paper/wao.pdf`).
+Paper: *Learning Reverse Actions from Video*, P. M. Emaase, S. Choi and B.-T. Zhang (JCSE draft, `paper/wao.pdf`).
 
 ## Data
 
