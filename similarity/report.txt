@@ -1,0 +1,92 @@
+########## ravi.pdf
+== whole paper (incl. references): 10639 words, 8-gram matches
+   OVERALL similarity: 7.11%
+     4.80%  own_doc_RAVE_md
+     4.32%  own_conference_main
+     3.93%  own_conference_RAVE_KIISE_V1
+     2.81%  own_conference_RAVE_KIISE_V2
+     0.42%  jcse_boilerplate
+     0.14%  cited_advantages_of_bilinear_koopman_realizations_f
+     0.13%  cited_modeling_and_control_of_soft_robots_using_the
+     0.11%  cited_leave_no_trace_learning_to_reset_for_safe_and
+     0.11%  cited_linear_predictors_for_nonlinear_dynamical_sys
+     0.10%  cited_alam_algebraically_consistent_latent_action_m
+     0.09%  cited_flingbot_the_unreasonable_effectiveness_of_dy
+     0.08%  cited_recall_traces_backtracking_models_for_efficie
+     0.08%  cited_homomorphism_autoencoder_learning_group_struc
+     0.08%  cited_learning_fine_grained_bimanual_manipulation_w
+     0.08%  cited_deep_learning_for_universal_linear_embeddings
+     0.08%  cited_softgym_benchmarking_deep_reinforcement_learn
+     0.08%  cited_learning_additively_compositional_latent_acti
+== body (references excluded): 6858 words, 8-gram matches
+   OVERALL similarity: 3.21%
+     1.22%  own_conference_RAVE_KIISE_V1
+     1.15%  own_conference_main
+     0.95%  own_doc_RAVE_md
+     0.70%  own_conference_RAVE_KIISE_V2
+     0.66%  jcse_boilerplate
+   longest matched passages:
+   [ 45] this is an open access article distributed under the terms of the creative commons attribution non commercial license http creativecommons org licenses by nc 3 0 which permits unrestricted non commercial use distribution
+   [ 16] 1 175 1 150 1 125 1 100 1 075 1 050 1 025 1 000
+   [ 15] zundo z 2c c arg min es d c g0 x 2 ci gi s
+   [ 14] the fraction of rollouts that end nearer the target stage than the start stage
+   [ 10] lrev d e st 1 ot 2 z z 2
+   [ 10] forward videos idle set n weights b r a v
+   [  9] time reversal and undo actions and a reversibility score
+   [  9] that the agent drift split is not identifiable from
+   [  9] quantity follows in closed form from the forward model
+   [  9] k z is computed with a batched matrix exponential
+   [  9] c arg minc es g0 i ci gi s
+   [  9] 0 737 and 0 640 within one standard deviation
+   [  8] st ot 1 st 1 ot 1 1
+   [  8] reversed joint deltas 1 58 and 1 53
+   [  8] m x k z exp g0 zi gi
+   [  8] into a slot or onto the plate from
+   [  8] g0 i zi gi g0 i zi gi
+   [  8] g0 i zi gi g0 i zi gi
+   [  8] can be reversed at all 4 5 6
+########## RAVI_Main_2026.pdf
+== whole paper (incl. references): 7755 words, 8-gram matches
+   OVERALL similarity: 9.46%
+     6.31%  own_doc_RAVE_md
+     5.58%  own_conference_main
+     5.21%  own_conference_RAVE_KIISE_V1
+     3.86%  own_conference_RAVE_KIISE_V2
+     0.58%  jcse_boilerplate
+     0.19%  cited_advantages_of_bilinear_koopman_realizations_f
+     0.15%  cited_leave_no_trace_learning_to_reset_for_safe_and
+     0.15%  cited_linear_predictors_for_nonlinear_dynamical_sys
+     0.14%  cited_alam_algebraically_consistent_latent_action_m
+     0.13%  cited_flingbot_the_unreasonable_effectiveness_of_dy
+     0.12%  cited_recall_traces_backtracking_models_for_efficie
+     0.12%  cited_homomorphism_autoencoder_learning_group_struc
+     0.12%  cited_softgym_benchmarking_deep_reinforcement_learn
+     0.12%  cited_learning_fine_grained_bimanual_manipulation_w
+     0.12%  cited_deep_learning_for_universal_linear_embeddings
+     0.10%  cited_learning_additively_compositional_latent_acti
+     0.10%  cited_modeling_and_control_of_soft_robots_using_the
+== body (references excluded): 6728 words, 8-gram matches
+   OVERALL similarity: 3.02%
+     1.11%  own_conference_RAVE_KIISE_V1
+     1.06%  own_conference_main
+     0.85%  own_doc_RAVE_md
+     0.71%  own_conference_RAVE_KIISE_V2
+     0.67%  jcse_boilerplate
+   longest matched passages:
+   [ 45] this is an open access article distributed under the terms of the creative commons attribution non commercial license http creativecommons org licenses by nc 3 0 which permits unrestricted non commercial use distribution
+   [ 16] 1 175 1 150 1 125 1 100 1 075 1 050 1 025 1 000
+   [ 15] zundo z 2c c arg min es d c g0 x 2 ci gi s
+   [ 14] the fraction of rollouts that end nearer the target stage than the start stage
+   [ 10] lrev d e st 1 ot 2 z z 2
+   [ 10] forward videos idle set n weights b r a v
+   [  9] that the agent drift split is not identifiable from
+   [  9] quantity follows in closed form from the forward model
+   [  9] k z is computed with a batched matrix exponential
+   [  9] c arg minc es g0 i ci gi s
+   [  9] 0 737 and 0 640 within one standard deviation
+   [  8] st ot 1 st 1 ot 1 1
+   [  8] m x k z exp g0 zi gi
+   [  8] into a slot or onto the plate from
+   [  8] g0 i zi gi g0 i zi gi
+   [  8] g0 i zi gi g0 i zi gi
+   [  8] can be reversed at all 4 5 6
