@@ -26,13 +26,13 @@ plt.rcParams.update({"font.size": 9, "text.color": INK, "axes.labelcolor": INK2,
 runs = defaultdict(list)
 for f in glob.glob(os.path.join(RES, "[IR]_*.json")):
     r = json.load(open(f))
-    if r.get("seed", 0) == 0 and r["model"] in ("lam", "signrev", "rave_noanchor", "rave", "oracle"):
-        runs[(r["train"], r["model"])].append(r)                                  # seed 0, original five models
+    if r["model"] in ("lam", "signrev", "rave_noanchor", "rave", "oracle"):
+        runs[(r["train"], r["model"])].append(r)                                  # all seeds (5 folds x 3 seeds)
 
 
 def vals(d, m, key):
     out = []
-    for r in sorted(runs[(d, m)], key=lambda r: r["fold"]):
+    for r in sorted(runs[(d, m)], key=lambda r: (r["fold"], r.get("seed", 0))):
         v = (r.get("fewshot_fwd_rel_err", {}).get(key.split(":")[1]) if key.startswith("fewshot:") else r.get(key))
         if v is not None:
             out.append(v)
@@ -110,8 +110,9 @@ norm = TwoSlopeNorm(vmin=0.25, vcenter=0.5, vmax=0.85)
 for ax, (d, dname) in zip(axes, DIRS):
     M = np.full((len(rows), 5), np.nan)
     for i, (m, _, _) in enumerate(rows):
-        for r in runs[(d, m)]:
-            M[i, r["fold"]] = r["reversibility_auroc"]
+        for f in range(5):                                                       # mean over seeds per fold
+            v = [r["reversibility_auroc"] for r in runs[(d, m)] if r["fold"] == f]
+            M[i, f] = np.mean(v) if v else np.nan
     im = ax.imshow(M, cmap=DIVERGE, norm=norm, aspect="auto")
     ax.set_xticks(range(5)); ax.set_xticklabels([f"{k}" for k in range(5)]); ax.set_xlabel(f"fold ({dname})")
     ax.set_yticks(range(len(rows))); ax.set_yticklabels([n for _, n, _ in rows] if d == "I" else [])

@@ -48,3 +48,13 @@ To get them, rerun those 50 with `--seed 0` after moving the old files aside (th
 - The local preview PDFs use `ieeetr.bst` (IEEEtran.bst is not installed here); the source still says IEEEtran.
 - `cover_letter.pdf` was built without `lmodern` (not installed here); rebuild locally.
 - References goswami2017global, proctor2016dmdc and higham2008functions were added to `ravi.bib`.
+
+## Status (19 Nov 2026): all GPU runs done, every tbd filled
+- `SEEDS="0 1 2" bash run_all.sh` on dale (GPUs 2 and 5, 3 jobs at a time): 240 runs (8 models x 2 dirs x 5 folds x 3 seeds),
+  no failures. Seed 0 of the five original models was rerun with the new keys; all 590 original values are identical.
+- `summarize.py` -> `results/summary.{json,txt}`; `stats.py` -> `results/paired_stats.{json,tex,txt}` (15 pairs per test;
+  the f-string in `stats.py` was rewritten for Python 3.10); `figs_journal.py` now averages over all seeds.
+- `code/paper_tables.py` and `code/paper_appendix_tables.py` print every table row of the paper from the results.
+- Every table and number in `ravi.tex` / `RAVI_Main_2026.tex` is now a mean over 15 runs; all red tbd / TODO are gone
+  and the text of Sec. VII-A to VII-D, VIII, IX, the abstract and the findings was rewritten from the results.
+- Page counts: `RAVI_Main_2026.pdf` 17 pages, `ravi.pdf` 21 pages (JCSE limit used so far: 14).

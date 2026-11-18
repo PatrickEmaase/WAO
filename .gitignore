@@ -13,3 +13,5 @@ paper/sheet.png
 __pycache__/
 paper/pg-*.png
 paper/cl-*.png
+code/logs/
+code/results

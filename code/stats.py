@@ -40,7 +40,8 @@ for d in ("I", "R"):
             w = stats.wilcoxon(a, b).pvalue if np.any(diff != 0) else 1.0
             out.append(dict(dir=d, other=o, metric=met, n=len(keys), diff_mean=float(diff.mean()),
                             diff_std=float(diff.std(ddof=1)), better=better, p_t=float(t), p_wilcoxon=float(w)))
-            tex.append(f"{'I$\\to$R' if d == 'I' else 'R$\\to$I'} & {oname} & {mname} & "
+            dname = "I$\\to$R" if d == "I" else "R$\\to$I"   # outside the f-string (Python < 3.12)
+            tex.append(f"{dname} & {oname} & {mname} & "
                        f"{diff.mean():+.3f}$\\pm${diff.std(ddof=1):.3f} & {better}/{len(keys)} & {t:.3f} \\\\")
             print(f"{d} {o:14s} {met:20s} RAVI-other {diff.mean():+.3f}±{diff.std(ddof=1):.3f}  "
                   f"RAVI better {better}/{len(keys)}  p_t={t:.3f}  p_W={w:.3f}")
