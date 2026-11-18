@@ -10,7 +10,7 @@ t = t[:a] + t[b:]
 
 # 2. rewrite in-text pointers to the appendices
 rep = [
-    (", supported in the appendices by per-fold results, a controlled two-dimensional study, development runs and a step-by-step walkthrough of every model variable.",
+    (", supported in the appendices by per-fold results, development runs and a step-by-step walkthrough of every model variable.",
      "."),
     ("Section~\\ref{s:discussion} discusses limitations and Section~\\ref{s:conclusion} concludes; the appendices give further results, a controlled study, development runs and implementation details.",
      "Section~\\ref{s:discussion} discusses limitations, and Section~\\ref{s:conclusion} concludes."),

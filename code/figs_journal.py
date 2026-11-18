@@ -14,7 +14,7 @@ RES, OUT = sys.argv[1], sys.argv[2]
 os.makedirs(OUT, exist_ok=True)
 MODELS = [("rave", "RAVI", "#2a78d6"), ("rave_noanchor", "RAVI w/o anchor", "#eb6834"),
           ("lam", "LAM", "#1baf7a"), ("signrev", "Sign-rev. LAM", "#eda100")]
-ORACLE = ("oracle", "Oracle (upper bound)", "#888780")
+ORACLE = ("oracle", "Two-direction ref.", "#888780")         # trained on both directions; not an upper bound
 INK, INK2, GRID, SURF = "#0b0b0b", "#52514e", "#e6e5e0", "#ffffff"
 DIRS = [("I", "I→R"), ("R", "R→I")]
 BLUE = LinearSegmentedColormap.from_list("blue", ["#cde2fb", "#86b6ef", "#3987e5", "#256abf", "#184f95", "#0d366b"])
@@ -25,7 +25,9 @@ plt.rcParams.update({"font.size": 9, "text.color": INK, "axes.labelcolor": INK2,
 
 runs = defaultdict(list)
 for f in glob.glob(os.path.join(RES, "[IR]_*.json")):
-    r = json.load(open(f)); runs[(r["train"], r["model"])].append(r)
+    r = json.load(open(f))
+    if r.get("seed", 0) == 0 and r["model"] in ("lam", "signrev", "rave_noanchor", "rave", "oracle"):
+        runs[(r["train"], r["model"])].append(r)                                  # seed 0, original five models
 
 
 def vals(d, m, key):

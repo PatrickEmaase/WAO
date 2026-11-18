@@ -2,6 +2,16 @@
 
 Directions: I = insertion (toaster_forward), R = removal (toaster_backward).
 Usage: python rave.py --train I --fold 0 --model rave      (models: lam, signrev, rave_noanchor, rave, oracle)
+
+Revision 1 adds three Koopman ablations and the diagnostics requested in review, all computed AFTER the original
+metrics, from the base (non-adapted) weights and with a separate random generator, so the original keys of the
+50 existing runs are reproduced unchanged (seed 0):
+  rave_sr       RAVI with the swapped pair decoded under +G0 (Koopman sign reversal, Proposition 6)
+  rave_norev    RAVI without the reversal terms (lambda_r = 0)
+  rave_nodrift  RAVI with G0 = 0
+New keys: null rollouts, permuted alignment reference, detector AUROCs (ordinary and motion-matched negatives),
+random-drift residual reference, per-step residual, state-specific / H-step undo, ||A(z)||, absorption probe,
+few-shot with G0 also tuned. See REVISION_CHECKLIST.md.
 """
 import argparse, copy, json, os
 import numpy as np, torch, torch.nn as nn, torch.nn.functional as F
@@ -19,10 +29,18 @@ p.add_argument("--stride", type=int, default=5)           # 10 Hz features -> on
 p.add_argument("--sym_reg", type=float, default=1e-3)     # L2 on the symmetric part of the action generators
 p.add_argument("--export", action="store_true")           # dump all variables for one held-out episode (viz/)
 p.add_argument("--out", default="results")
+p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+p.add_argument("--data_dir", default=None)                 # where toaster_{forward,backward}.npz live (default: here)
+p.add_argument("--fewshot_steps", type=int, default=500)
+p.add_argument("--undo_tau", type=float, default=0.5)      # undo success: relative return error below tau
+p.add_argument("--undo_H", type=int, default=3)            # horizon of the multi-step undo plan
+p.add_argument("--undo_iters", type=int, default=200)
+p.add_argument("--no_extras", action="store_true")         # skip the revision-1 diagnostics
 args = p.parse_args()
 torch.manual_seed(args.seed); np.random.seed(args.seed)
-dev = "cuda"
+dev = args.device
 ROOT = os.path.dirname(os.path.abspath(__file__))
+DATA = args.data_dir or ROOT
 FILES = {"I": "toaster_forward.npz", "R": "toaster_backward.npz"}
 NFOLD, IDLE_Q = 5, 0.15                      # robot-idle anchor = slowest 15% of 10 Hz steps
 
@@ -30,7 +48,7 @@ NFOLD, IDLE_Q = 5, 0.15                      # robot-idle anchor = slowest 15% o
 # ---------------------------------------------------------------- data
 def load(dirn):
     """Return the 10 Hz arrays plus `stride` phase-shifted copies at the coarse step (offset 0 = evaluation)."""
-    z = dict(np.load(os.path.join(ROOT, FILES[dirn])))
+    z = dict(np.load(os.path.join(DATA, FILES[dirn])))
     moving = np.diff(z["qpos"], axis=1).var(1).sum(1) > 1e-8                   # drop static recordings
     z = {k: v[moving] for k, v in z.items()}
     x = np.concatenate([z["cls"], z["grid"].astype(np.float32)], -1)          # (E, 250, 3456)
@@ -106,8 +124,9 @@ class LAM(Base):                                  # MLP forward model; reverse h
 
 
 class RAVE(Base):                                 # K(z) = exp(G0 + sum z_i G_i) acting on [s; 1]
-    def __init__(self):
+    def __init__(self, use_drift=True):
         super().__init__()
+        self.use_drift = use_drift                                                     # False: G0 = 0 (rave_nodrift)
         self.W = nn.Parameter(0.01 * torch.randn(m, d, d)); self.b = nn.Parameter(0.01 * torch.randn(m, d))
         self.V = nn.Parameter(torch.zeros(m, d, d))                                    # symmetric part, L2-penalized
         self.S0 = nn.Parameter(0.01 * torch.randn(d, d)); self.L0 = nn.Parameter(0.01 * torch.randn(d, d))
@@ -125,6 +144,8 @@ class RAVE(Base):                                 # K(z) = exp(G0 + sum z_i G_i)
         Gi[:, :d, d] = self.b                                                          # + translation column
         G0 = torch.zeros(d + 1, d + 1, device=self.W.device)
         G0[:d, :d] = (self.S0 - self.S0.T) - self.L0 @ self.L0.T; G0[:d, d] = self.b0  # skew + NSD drift
+        if not self.use_drift:
+            G0 = torch.zeros_like(G0)
         return G0, Gi
 
     def gen(self, z, drift=1.0):
@@ -141,12 +162,16 @@ class RAVE(Base):                                 # K(z) = exp(G0 + sum z_i G_i)
         G0, Gi = self.gens(); S = self.S_ref                                           # (N, d+1)
         X = torch.einsum("mij,nj->nim", Gi, S).reshape(-1, Gi.shape[0])                 # (N(d+1), m)
         y = (S @ G0.T).reshape(-1, 1)
+        if y.norm() == 0:                                                              # no drift generator
+            return torch.zeros(Gi.shape[0], device=S.device), float("nan")
         c = torch.linalg.lstsq(X, y).solution.squeeze(-1)
         return c, ((y.squeeze(-1) - X @ c).norm() / y.norm()).item()
 
 
 kind = args.model
-model = (LAM() if kind in ("lam", "signrev") else RAVE()).to(dev)
+KOOPMAN = ("rave_noanchor", "rave", "oracle", "rave_sr", "rave_norev", "rave_nodrift")
+assert kind in ("lam", "signrev") + KOOPMAN, kind
+model = (LAM() if kind in ("lam", "signrev") else RAVE(use_drift=(kind != "rave_nodrift"))).to(dev)
 mse = F.mse_loss
 
 
@@ -163,8 +188,11 @@ def losses(o0, o1, idle):
         L = L + mse(model.decode(model.fwd(s1, zb)), o0) + mse(zb, -z)
     else:                                                                    # exact inverse + drift-aware reversal
         L = L + mse(model.decode(model.step(-model.gen(z_n), s1)), o0)
-        L = L + mse(model.decode(model.step(model.gen(zb, drift=-1.0), s1)), o0) + mse(zb, -z)
-        if kind in ("rave", "oracle") and idle.any():
+        if kind == "rave_sr":                                                # ablation: swapped pair under +G0
+            L = L + mse(model.decode(model.step(model.gen(zb, drift=1.0), s1)), o0) + mse(zb, -z)
+        elif kind != "rave_norev":                                           # ablation rave_norev: lambda_r = 0
+            L = L + mse(model.decode(model.step(model.gen(zb, drift=-1.0), s1)), o0) + mse(zb, -z)
+        if kind in ("rave", "oracle", "rave_sr", "rave_norev", "rave_nodrift") and idle.any():
             L = L + z[idle].pow(2).mean()
         L = L + args.sym_reg * model.V.pow(2).sum()
     return L
@@ -215,7 +243,7 @@ def reverse_actions(o, z):
     """Actions that undo each forward transition, in reversed order, under the model's FORWARD dynamics."""
     if kind == "lam":
         zr = model.idm(o[1:], o[:-1])
-    elif kind == "signrev":
+    elif kind in ("signrev", "rave_sr"):                                     # sign-reversal models: z_bar = -z
         zr = -z
     else:
         c, _ = model.drift_action(); zr = -z - 2 * c
@@ -262,7 +290,8 @@ with torch.no_grad():
     res["backward_rel_err"] = (mse(ob, o0) / mse(o1, o0)).item()
     res["forward_rel_err"] = (mse(model.decode(model.fwd(model.encode(o0), z)), o1) / mse(o0, o1)).item()
     if kind not in ("lam", "signrev"):
-        res["drift_residual"] = model.drift_action()[1]
+        r_ = model.drift_action()[1]
+        res["drift_residual"] = None if r_ != r_ else r_                     # None when G0 = 0 (rave_nodrift)
 
     # stage prototypes (evaluation only): S0 = slices on plate, S2 = slices in toaster
     DI, DR = (DA, DB) if A == "I" else (DB, DA)
@@ -310,9 +339,9 @@ def cond_scores(o):
         return (sv[:, 0] / sv[:, -1]).cpu().numpy()
 
 
-pos, neg = [], []
-for e in teA:
-    g = DA["qpos"][e][:, [6, 13]]; kap = cond_scores(T(DA["o"][e])); n = len(kap)
+def release_carry(D, e, n):
+    """Post-release transitions (the 0.5 s after a gripper opens past 0.9 after a >= 1 s grasp) and grasped carrying."""
+    g = D["qpos"][e][:, [6, 13]]
     grasp = (g > 0.05) & (g < 0.9)
     rel = np.zeros(n, bool); hold = max(1, 10 // args.stride)                 # release = open after a 1 s grasp
     for a in range(2):
@@ -321,7 +350,14 @@ for e in teA:
             run = run + 1 if grasp[t - 1, a] else 0
             if run >= hold and g[t, a] >= 0.9:
                 rel[t:t + max(1, 5 // args.stride)] = True                   # the 0.5 s after a release
-    carry = grasp[:n].any(1) & (DA["speed"][e][:n] > thr) & ~rel
+    carry = grasp[:n].any(1) & (D["speed"][e][:n] > thr) & ~rel
+    return rel, carry
+
+
+pos, neg = [], []
+for e in teA:
+    kap = cond_scores(T(DA["o"][e])); n = len(kap)
+    rel, carry = release_carry(DA, e, n)
     pos += list(kap[rel]); neg += list(kap[carry])
 res["reversibility_auroc"] = float(auroc(np.array(pos), np.array(neg))) if pos and neg else None
 res["n_release_frames"], res["n_carry_frames"] = len(pos), len(neg)
@@ -333,7 +369,7 @@ if kind != "oracle":
         model.load_state_dict(base)
         if k:
             a0, a1, _ = pairs(DB, trB[:k]); opt = torch.optim.Adam(model.idm_net.parameters(), lr=1e-3)
-            for _ in range(500):
+            for _ in range(args.fewshot_steps):
                 i = torch.randint(0, len(a0), (256,), device=dev)
                 with torch.no_grad():
                     s0, s1t = model.encode(a0[i]), model.encode(a1[i])
@@ -344,7 +380,15 @@ if kind != "oracle":
             pred = model.decode(model.fwd(model.encode(o0b), model.idm(o0b, o1b)))
             res["fewshot_fwd_rel_err"][k] = (mse(pred, o1b) / mse(o0b, o1b)).item()
 
+if not args.no_extras:
+    if kind != "oracle":
+        model.load_state_dict(base)                                          # extras use the non-adapted model
+    from extras import run_extras                                           # revision-1 diagnostics
+    run_extras(globals())
+
 os.makedirs(os.path.join(ROOT, args.out), exist_ok=True)
-with open(os.path.join(ROOT, args.out, f"{A}_{args.fold}_{kind}.json"), "w") as f:
+tag = "" if args.seed == 0 else f"_s{args.seed}"                             # seed 0 keeps the original file names
+res["seed"] = args.seed
+with open(os.path.join(ROOT, args.out, f"{A}_{args.fold}_{kind}{tag}.json"), "w") as f:
     json.dump(res, f, indent=1)
 print(json.dumps(res))

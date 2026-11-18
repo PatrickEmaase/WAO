@@ -8,12 +8,14 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(ROOT, "results", "figures_ravi"); os.makedirs(OUT, exist_ok=True)
+RES = os.path.join(ROOT, "results") if glob.glob(os.path.join(ROOT, "results", "[IR]_*.json")) \
+    else os.path.join(ROOT, "..", "results")
+OUT = os.path.join(RES, "figures_ravi"); os.makedirs(OUT, exist_ok=True)
 
 # categorical slots in fixed order (validated: adjacent CVD dE >= 9.1, normal-vision >= 22.9); oracle = neutral reference
 MODELS = [("rave", "RAVI", "#2a78d6"), ("rave_noanchor", "RAVI w/o anchor", "#eb6834"),
           ("lam", "LAM", "#1baf7a"), ("signrev", "Sign-rev. LAM", "#eda100")]
-ORACLE = ("oracle", "Oracle (upper bound)", "#888780")
+ORACLE = ("oracle", "Two-direction reference", "#888780")     # trained on both directions; not an upper bound
 INK, INK2, GRID, SURF = "#0b0b0b", "#52514e", "#e6e5e0", "#fcfcfb"
 DIRS = [("I", "Insertion → removal"), ("R", "Removal → insertion")]
 BLUE = LinearSegmentedColormap.from_list("blue", ["#cde2fb", "#86b6ef", "#3987e5", "#256abf", "#184f95", "#0d366b"])
@@ -24,8 +26,10 @@ plt.rcParams.update({"font.size": 9, "text.color": INK, "axes.labelcolor": INK2,
                      "savefig.facecolor": SURF, "axes.spines.top": False, "axes.spines.right": False})
 
 runs = defaultdict(list)
-for f in glob.glob(os.path.join(ROOT, "results", "[IR]_*.json")):
-    r = json.load(open(f)); runs[(r["train"], r["model"])].append(r)
+for f in glob.glob(os.path.join(RES, "[IR]_*.json")):
+    r = json.load(open(f))
+    if r.get("seed", 0) == 0:                                                    # figures show seed 0 per fold
+        runs[(r["train"], r["model"])].append(r)
 
 
 def vals(d, m, key):
@@ -73,7 +77,7 @@ for ax, (key, title, ref, reflabel) in zip(axes, PANELS):
 handles = [plt.Rectangle((0, 0), 1, 1, color=c) for _, _, c in MODELS] + [plt.Line2D([], [], ls="--", color=ORACLE[2])]
 fig.legend(handles, [n for _, n, _ in MODELS] + [ORACLE[1]], loc="upper center", ncol=5, frameon=False,
            bbox_to_anchor=(0.5, 1.08), fontsize=8.5)
-fig.suptitle("Drift-aware models stay stable and detect irreversible steps; sign reversal does not",
+fig.suptitle("Koopman models and the plain LAM stay stable; sign reversal does not",
              x=0.01, ha="left", y=1.17, fontsize=11, color=INK)
 fig.text(0.01, -0.06, "Bars: mean over 5 folds; whiskers: ±1 std; dots: folds. Dotted lines: chance (AUROC 0.5), "
          "no progress toward the target (ratio 1.0), predicting no change (error 1.0).\n"
@@ -110,10 +114,10 @@ for gi, (_, dname) in enumerate(DIRS):
             color=INK)
 ax.tick_params(length=0); [s.set_visible(False) for s in ax.spines.values()]
 cb = fig.colorbar(im, ax=ax, fraction=0.025, pad=0.01); cb.outline.set_visible(False)
-cb.set_label("relative score (1 = best, 0 = worst non-oracle)", fontsize=7.5, color=INK2)
-ax.set_title("No model wins everywhere: RAVI variants lead on reversibility and transfer, LAM on action alignment",
+cb.set_label("relative score (1 = best, 0 = worst non-reference)", fontsize=7.5, color=INK2)
+ax.set_title("No model wins everywhere: RAVI variants lead on transfer, LAM on action alignment",
              loc="left", fontsize=10.5, color=INK, pad=30)
-fig.text(0.01, -0.16, "Cells show raw means over 5 folds; shading is scaled per column among the four non-oracle "
+fig.text(0.01, -0.16, "Cells show raw means over 5 folds; shading is scaled per column among the four non-reference "
          "models, so small absolute gaps (e.g. forward error 0.219 vs 0.230) can look large.", fontsize=7.5, color=INK2)
 save(fig, "fig_scorecard_heatmap")
 
@@ -136,7 +140,7 @@ for ax, (d, dname) in zip(axes, DIRS):
 axes[0].set_ylabel("forward error on opposite task\n(lower is better)")
 fig.legend(*axes[0].get_legend_handles_labels(), loc="lower center", ncol=4, frameon=False, fontsize=8,
            bbox_to_anchor=(0.5, -0.1))
-fig.suptitle("Shared Koopman drift adapts best: only the IDM is fine-tuned", x=0.01, ha="left", fontsize=11, y=1.03)
+fig.suptitle("Koopman variants adapt best when only the IDM is fine-tuned", x=0.01, ha="left", fontsize=11, y=1.03)
 fig.tight_layout()
 save(fig, "fig_fewshot_curves")
 
