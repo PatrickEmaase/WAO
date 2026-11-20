@@ -15,7 +15,7 @@ for attempt in 1 2 3; do
   sleep $((RANDOM % 30))                               # stagger launches so parallel checks do not race
   while [ "$(account_gpu_procs)" -ge "$MAX_ACCOUNT_GPU_PROCS" ]; do sleep 30; done
   start=$(date +%s)
-  CUDA_VISIBLE_DEVICES=$gpu $PY rave.py --train "$dir" --fold "$fold" --model "$model" --seed "$seed" > "logs/$name.log" 2>&1
+  CUDA_VISIBLE_DEVICES=$gpu $PY rave.py --train "$dir" --fold "$fold" --model "$model" --seed "$seed" $EXTRA_ARGS > "logs/${LOGTAG}$name.log" 2>&1
   rc=$?
   [ $rc -eq 143 ] && [ $(( $(date +%s) - start )) -lt 600 ] || exit $rc
   echo "$(date +%T) $name stopped by quota (exit 143), retry $attempt" >> logs/quota_retries.log

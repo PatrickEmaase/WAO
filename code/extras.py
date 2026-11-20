@@ -59,6 +59,7 @@ def run_extras(g):
             c, _ = model.drift_action()
         D = {k: [] for k in ("null_zero", "null_random", "null_forward", "negz", "undo")}
         cos_perm = []
+        rel_null, end_dec, null_dec = [], [], []
         for j, eb in enumerate(teB):
             ea = teA[j % len(teA)]
             oa, za = ep_actions(DA, ea); ob_, zb = ep_actions(DB, eb)
@@ -68,6 +69,12 @@ def run_extras(g):
             zr_rand = torch.tensor(rng.multivariate_normal(mu_z, cov_z, len(za)), dtype=za.dtype, device=za.device)
             D["null_random"].append(end(zr_rand))
             D["null_forward"].append(end(za))
+            zr_m = zb if kind == "oracle" else reverse_actions(oa, za)                 # revision 2
+            m_end, z_end = end(zr_m), end(torch.zeros_like(za))
+            rel_null.append(m_end / z_end)
+            d0_dec = np.linalg.norm(rollout(ob_[0], za[:0]).cpu().numpy()[-1] - tgt)  # decoded start state
+            end_dec.append(np.linalg.norm(rollout(ob_[0], zr_m).cpu().numpy()[-1] - tgt) / d0_dec)
+            null_dec.append(np.linalg.norm(rollout(ob_[0], torch.zeros_like(za)).cpu().numpy()[-1] - tgt) / d0_dec)
             if koop:
                 D["negz"].append(end((-za).flip(0)))
                 D["undo"].append(end((-za - 2 * c).flip(0)))
@@ -79,10 +86,13 @@ def run_extras(g):
             if v:
                 ex[f"end_dist_ratio_{k}"] = float(np.mean(v))
         ex["action_cos_permuted"] = float(np.mean(cos_perm))
+        ex["end_dist_rel_null"] = float(np.mean(rel_null))                 # own end distance / own zero-action null
+        ex["end_dist_ratio_decstart"] = float(np.mean(end_dec))            # measured from the decoded start state
+        ex["end_dist_ratio_null_zero_decstart"] = float(np.mean(null_dec))
 
     # ------------------------------------------------ 2. reversibility detectors, ordinary and motion-matched negatives
     scores = {k: ([], []) for k in ("kappa", "kappa_lin", "rho", "eps_t", "znorm", "feat_change", "arm_speed",
-                                    "gripper_open")}
+                                    "gripper_open", "inv_err", "inv_err_abs")}
     spd_pos, spd_neg, dfe_pos, dfe_neg = [], [], [], []
     trans = {"release": [], "carry": []}                                            # (o_t, o_{t+1}) for the undo test
     with torch.no_grad():
@@ -100,6 +110,16 @@ def run_extras(g):
             gq = DA["qpos"][e][:, [6, 13]]
             lo, hi = np.maximum(np.arange(n) - 1, 0), np.minimum(np.arange(n) + 1, len(gq) - 1)
             sc["gripper_open"] = (gq[hi] - gq[lo]).max(1)
+            s1e = model.encode(o[1:])                                                   # revision 2: inverse-step error
+            if kind == "lam":
+                ob_inv = model.decode(model.bwd(s1e, model.idm(o[1:], o[:-1])))
+            elif kind == "signrev":
+                ob_inv = model.decode(model.fwd(s1e, -z))
+            else:
+                ob_inv = model.decode(model.step(-model.gen(z), s1e))
+            ie = (ob_inv - o[:-1]).norm(dim=1)
+            sc["inv_err_abs"] = ie.cpu().numpy()
+            sc["inv_err"] = (ie / (o[1:] - o[:-1]).norm(dim=1)).cpu().numpy()
             if koop:
                 A_ = model.gen(z); M = A_[:, :d, :d]
                 sv = torch.linalg.svdvals(torch.matrix_exp(M)); sc["kappa_lin"] = (sv[:, 0] / sv[:, -1]).cpu().numpy()
@@ -156,7 +176,10 @@ def run_extras(g):
             else:
                 z_init = -z - 2 * model.drift_action()[0]
             rel_err = lambda zs: (model.decode(_roll(model, s1, zs)) - o0).norm(dim=1) / base
+            abs_err = lambda zs: (model.decode(_roll(model, s1, zs)) - o0).norm(dim=1)
             ex[f"undo_closed_relerr_{name}"] = float(rel_err([z_init]).median())
+            ex[f"undo_closed_abserr_{name}"] = float(abs_err([z_init]).median())
+            ex[f"step_len_{name}"] = float(base.median())
         for H, key in ((1, "undo1"), (args.undo_H, "undoH")):
             zs = [z_init.clone()] + [torch.zeros_like(z_init) for _ in range(H - 1)]
             zs = [zz.requires_grad_(True) for zz in zs]
@@ -170,6 +193,8 @@ def run_extras(g):
                 opt.step()
             with torch.no_grad():
                 r = rel_err([zz.detach() for zz in zs])
+                ra = abs_err([zz.detach() for zz in zs])
+            ex[f"{key}_abserr_{name}"] = float(ra.median())
             ex[f"{key}_relerr_{name}"] = float(r.median())
             ex[f"{key}_success_{name}"] = float((r < args.undo_tau).float().mean())
 
@@ -188,16 +213,26 @@ def run_extras(g):
 
     # ------------------------------------------------ 6. drift absorption: how linearly decodable is a release from z_t?
     def zfeat(D, eps):
-        X, y, Xd = [], [], []
+        X, y, Xd, Xm = [], [], [], []
         with torch.no_grad():
             for e in eps:
                 o = T(D["o"][e]); n = len(o) - 1; rel, carry = release_carry(D, e, n); keep = rel | carry
                 X.append(model.idm(o[:-1], o[1:]).cpu().numpy()[keep]); y.append(rel[keep].astype(float))
                 Xd.append((o[1:] - o[:-1]).cpu().numpy()[keep])
-        return np.concatenate(X).astype(np.float64), np.concatenate(y), np.concatenate(Xd).astype(np.float64)
-    Xtr, ytr, Xdtr = zfeat(DA, trA); Xte, yte, Xdte = zfeat(DA, teA)
+                gq = D["qpos"][e][:, [6, 13]]                                  # arm and gripper motion of each step
+                lo, hi = np.maximum(np.arange(n) - 1, 0), np.minimum(np.arange(n) + 1, len(gq) - 1)
+                Xm.append(np.c_[D["dq"][e][:n], D["speed"][e][:n], gq[hi] - gq[lo]][keep])
+        cat = lambda L: np.concatenate(L).astype(np.float64)
+        return cat(X), np.concatenate(y), cat(Xd), cat(Xm)
+    Xtr, ytr, Xdtr, Mtr = zfeat(DA, trA); Xte, yte, Xdte, Mte = zfeat(DA, teA)
     ex["absorption_probe_auroc"] = _logreg_auroc(Xtr, ytr, Xte, yte, auroc)
     ex["absorption_probe_auroc_dfeat"] = _logreg_auroc(Xdtr, ytr, Xdte, yte, auroc)
+    # revision 2: regress z_t on arm and gripper motion (fitted on training steps) and probe only the residual
+    mu, sd = Mtr.mean(0), Mtr.std(0) + 1e-8
+    P = lambda M: np.c_[(M - mu) / sd, np.ones(len(M))]
+    W = np.linalg.solve(P(Mtr).T @ P(Mtr) + 1e-3 * np.eye(P(Mtr).shape[1]), P(Mtr).T @ Xtr)
+    ex["absorption_probe_auroc_resid"] = _logreg_auroc(Xtr - P(Mtr) @ W, ytr, Xte - P(Mte) @ W, yte, auroc)
+    ex["absorption_probe_auroc_motion"] = _logreg_auroc(P(Mtr)[:, :-1], ytr, P(Mte)[:, :-1], yte, auroc)
 
     # ------------------------------------------------ 7. few-shot with the drift generator also fine-tuned
     if has_drift and kind != "oracle":

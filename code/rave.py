@@ -29,6 +29,7 @@ p.add_argument("--stride", type=int, default=5)           # 10 Hz features -> on
 p.add_argument("--sym_reg", type=float, default=1e-3)     # L2 on the symmetric part of the action generators
 p.add_argument("--export", action="store_true")           # dump all variables for one held-out episode (viz/)
 p.add_argument("--out", default="results")
+p.add_argument("--nfold", type=int, default=5)                 # revision 2: 10-fold cross-validation
 p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
 p.add_argument("--data_dir", default=None)                 # where toaster_{forward,backward}.npz live (default: here)
 p.add_argument("--fewshot_steps", type=int, default=500)
@@ -42,7 +43,7 @@ dev = args.device
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA = args.data_dir or ROOT
 FILES = {"I": "toaster_forward.npz", "R": "toaster_backward.npz"}
-NFOLD, IDLE_Q = 5, 0.15                      # robot-idle anchor = slowest 15% of 10 Hz steps
+NFOLD, IDLE_Q = args.nfold, 0.15                      # robot-idle anchor = slowest 15% of 10 Hz steps
 
 
 # ---------------------------------------------------------------- data
@@ -277,7 +278,7 @@ def auroc(pos, neg):
     return (r[: len(pos)].sum() - len(pos) * (len(pos) + 1) / 2) / (len(pos) * len(neg))
 
 
-res = dict(train=A, fold=args.fold, model=kind)
+res = dict(train=A, fold=args.fold, model=kind, nfold=args.nfold)
 with torch.no_grad():
     # 1. backward (and forward) prediction on held-out episodes of the training direction
     o0, o1, _ = pairs(DA, teA); s1 = model.encode(o1); z = model.idm(o0, o1)
@@ -389,6 +390,6 @@ if not args.no_extras:
 os.makedirs(os.path.join(ROOT, args.out), exist_ok=True)
 tag = "" if args.seed == 0 else f"_s{args.seed}"                             # seed 0 keeps the original file names
 res["seed"] = args.seed
-with open(os.path.join(ROOT, args.out, f"{A}_{args.fold}_{kind}{tag}.json"), "w") as f:
+with open(os.path.join(ROOT, args.out, f"{A}_{args.fold}_{kind}{tag}.json" if args.nfold == 5 else f"k{args.nfold}_{A}_{args.fold}_{kind}{tag}.json"), "w") as f:
     json.dump(res, f, indent=1)
 print(json.dumps(res))

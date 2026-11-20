@@ -1,0 +1,60 @@
+I lam            end_dist_ratio         n=10 d=-0.062+-0.090 wins= 7 p_t=0.0553 p_W=0.0840 p_holm=0.8840
+I lam            reversibility_auroc    n=10 d=+0.062+-0.054 wins= 9 p_t=0.0054 p_W=0.0098 p_holm=0.1291
+I lam            fewshot_5              n=10 d=-0.065+-0.036 wins=10 p_t=0.0003 p_W=0.0020 p_holm=0.0089
+I lam            end_dist_rel_null      n=10 d=+0.087+-0.102 wins= 3 p_t=0.0253 p_W=0.0488 p_holm=
+I lam            action_cos             n=10 d=-0.046+-0.025 wins= 1 p_t=0.0003 p_W=0.0039 p_holm=
+I signrev        end_dist_ratio         n=10 d=-1.029+-0.576 wins=10 p_t=0.0003 p_W=0.0020 p_holm=0.0094
+I signrev        reversibility_auroc    n=10 d=+0.101+-0.093 wins= 9 p_t=0.0074 p_W=0.0059 p_holm=0.1698
+I signrev        fewshot_5              n=10 d=-0.049+-0.029 wins= 9 p_t=0.0005 p_W=0.0039 p_holm=0.0147
+I signrev        end_dist_rel_null      n=10 d=+0.049+-0.275 wins= 7 p_t=0.5901 p_W=0.7695 p_holm=
+I signrev        action_cos             n=10 d=-0.008+-0.009 wins= 2 p_t=0.0207 p_W=0.0195 p_holm=
+I rave_noanchor  end_dist_ratio         n=10 d=-0.032+-0.091 wins= 5 p_t=0.2925 p_W=0.3750 p_holm=1.0000
+I rave_noanchor  reversibility_auroc    n=10 d=+0.017+-0.021 wins= 9 p_t=0.0368 p_W=0.0273 p_holm=0.6838
+I rave_noanchor  fewshot_5              n=10 d=+0.019+-0.019 wins= 3 p_t=0.0144 p_W=0.0273 p_holm=0.3020
+I rave_noanchor  end_dist_rel_null      n=10 d=-0.037+-0.107 wins= 6 p_t=0.3078 p_W=0.3223 p_holm=
+I rave_noanchor  action_cos             n=10 d=+0.015+-0.006 wins=10 p_t=0.0000 p_W=0.0020 p_holm=
+I rave_sr        end_dist_ratio         n=10 d=+0.051+-0.083 wins= 3 p_t=0.0842 p_W=0.1055 p_holm=1.0000
+I rave_sr        reversibility_auroc    n=10 d=+0.003+-0.019 wins= 4 p_t=0.6597 p_W=0.8457 p_holm=1.0000
+I rave_sr        fewshot_5              n=10 d=+0.014+-0.019 wins= 2 p_t=0.0427 p_W=0.0645 p_holm=0.7252
+I rave_sr        end_dist_rel_null      n=10 d=+0.038+-0.114 wins= 3 p_t=0.3142 p_W=0.3223 p_holm=
+I rave_sr        action_cos             n=10 d=-0.009+-0.009 wins= 2 p_t=0.0075 p_W=0.0137 p_holm=
+I rave_norev     end_dist_ratio         n=10 d=-0.120+-0.052 wins=10 p_t=0.0000 p_W=0.0020 p_holm=0.0015
+I rave_norev     reversibility_auroc    n=10 d=+0.007+-0.020 wins= 7 p_t=0.2789 p_W=0.2754 p_holm=1.0000
+I rave_norev     fewshot_5              n=10 d=+0.005+-0.016 wins= 5 p_t=0.4002 p_W=0.5566 p_holm=1.0000
+I rave_norev     end_dist_rel_null      n=10 d=-0.033+-0.111 wins= 7 p_t=0.3744 p_W=0.3750 p_holm=
+I rave_norev     action_cos             n=10 d=+0.020+-0.012 wins=10 p_t=0.0005 p_W=0.0020 p_holm=
+I rave_nodrift   end_dist_ratio         n=10 d=-0.059+-0.061 wins= 9 p_t=0.0134 p_W=0.0195 p_holm=0.2954
+I rave_nodrift   reversibility_auroc    n=10 d=+0.005+-0.023 wins= 5 p_t=0.4998 p_W=0.6250 p_holm=1.0000
+I rave_nodrift   fewshot_5              n=10 d=+0.006+-0.018 wins= 3 p_t=0.3337 p_W=0.3223 p_holm=1.0000
+I rave_nodrift   end_dist_rel_null      n=10 d=-0.070+-0.097 wins= 8 p_t=0.0496 p_W=0.0488 p_holm=
+I rave_nodrift   action_cos             n=10 d=-0.012+-0.007 wins= 0 p_t=0.0006 p_W=0.0020 p_holm=
+R lam            end_dist_ratio         n=10 d=+0.036+-0.115 wins= 4 p_t=0.3440 p_W=0.4316 p_holm=1.0000
+R lam            reversibility_auroc    n=10 d=+0.090+-0.156 wins= 7 p_t=0.0998 p_W=0.1055 p_holm=1.0000
+R lam            fewshot_5              n=10 d=-0.047+-0.015 wins=10 p_t=0.0000 p_W=0.0020 p_holm=0.0001
+R lam            end_dist_rel_null      n=10 d=+0.221+-0.096 wins= 0 p_t=0.0000 p_W=0.0020 p_holm=
+R lam            action_cos             n=10 d=-0.093+-0.030 wins= 0 p_t=0.0000 p_W=0.0020 p_holm=
+R signrev        end_dist_ratio         n=10 d=-1.044+-0.809 wins=10 p_t=0.0028 p_W=0.0020 p_holm=0.0716
+R signrev        reversibility_auroc    n=10 d=+0.197+-0.076 wins=10 p_t=0.0000 p_W=0.0020 p_holm=0.0007
+R signrev        fewshot_5              n=10 d=-0.015+-0.022 wins= 7 p_t=0.0616 p_W=0.0645 p_holm=0.9244
+R signrev        end_dist_rel_null      n=10 d=+0.178+-0.231 wins= 2 p_t=0.0377 p_W=0.0645 p_holm=
+R signrev        action_cos             n=10 d=-0.008+-0.005 wins= 1 p_t=0.0005 p_W=0.0039 p_holm=
+R rave_noanchor  end_dist_ratio         n=10 d=+0.091+-0.074 wins= 1 p_t=0.0038 p_W=0.0059 p_holm=0.0961
+R rave_noanchor  reversibility_auroc    n=10 d=+0.044+-0.023 wins=10 p_t=0.0002 p_W=0.0020 p_holm=0.0066
+R rave_noanchor  fewshot_5              n=10 d=+0.017+-0.011 wins= 1 p_t=0.0011 p_W=0.0039 p_holm=0.0304
+R rave_noanchor  end_dist_rel_null      n=10 d=+0.092+-0.090 wins= 1 p_t=0.0103 p_W=0.0059 p_holm=
+R rave_noanchor  action_cos             n=10 d=+0.012+-0.007 wins=10 p_t=0.0003 p_W=0.0020 p_holm=
+R rave_sr        end_dist_ratio         n=10 d=+0.059+-0.091 wins= 2 p_t=0.0718 p_W=0.1055 p_holm=1.0000
+R rave_sr        reversibility_auroc    n=10 d=-0.007+-0.024 wins= 3 p_t=0.4058 p_W=0.4316 p_holm=1.0000
+R rave_sr        fewshot_5              n=10 d=+0.012+-0.009 wins= 1 p_t=0.0018 p_W=0.0039 p_holm=0.0483
+R rave_sr        end_dist_rel_null      n=10 d=+0.055+-0.086 wins= 3 p_t=0.0770 p_W=0.1309 p_holm=
+R rave_sr        action_cos             n=10 d=-0.005+-0.006 wins= 3 p_t=0.0185 p_W=0.0371 p_holm=
+R rave_norev     end_dist_ratio         n=10 d=-0.181+-0.090 wins=10 p_t=0.0001 p_W=0.0020 p_holm=0.0041
+R rave_norev     reversibility_auroc    n=10 d=+0.033+-0.042 wins= 9 p_t=0.0360 p_W=0.0371 p_holm=0.6838
+R rave_norev     fewshot_5              n=10 d=+0.004+-0.016 wins= 5 p_t=0.4369 p_W=0.4922 p_holm=1.0000
+R rave_norev     end_dist_rel_null      n=10 d=-0.130+-0.118 wins= 9 p_t=0.0068 p_W=0.0039 p_holm=
+R rave_norev     action_cos             n=10 d=+0.022+-0.013 wins= 9 p_t=0.0005 p_W=0.0039 p_holm=
+R rave_nodrift   end_dist_ratio         n=10 d=-0.043+-0.116 wins= 7 p_t=0.2724 p_W=0.3223 p_holm=1.0000
+R rave_nodrift   reversibility_auroc    n=10 d=-0.001+-0.031 wins= 5 p_t=0.9217 p_W=1.0000 p_holm=1.0000
+R rave_nodrift   fewshot_5              n=10 d=+0.010+-0.012 wins= 2 p_t=0.0202 p_W=0.0195 p_holm=0.4039
+R rave_nodrift   end_dist_rel_null      n=10 d=-0.043+-0.128 wins= 6 p_t=0.3164 p_W=0.3750 p_holm=
+R rave_nodrift   action_cos             n=10 d=-0.003+-0.006 wins= 2 p_t=0.1768 p_W=0.2324 p_holm=

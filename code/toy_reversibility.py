@@ -20,16 +20,19 @@ import argparse, json, os
 import numpy as np, torch, torch.nn as nn, torch.nn.functional as F
 
 p = argparse.ArgumentParser()
-p.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2])
+p.add_argument("--seeds", type=int, nargs="+", default=list(range(10)))          # revision 2: 10 seeds
 p.add_argument("--steps", type=int, default=4000)
 p.add_argument("--models", nargs="+", default=["rave", "rave_noanchor", "rave_sr", "rave_norev", "rave_nodrift",
-                                                "lam", "signrev"])
+                                                "lam", "signrev", "rave_sr_noanchor", "rave_nodrift_noanchor",
+                                                "rave_2f"])
 p.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "results",
                                              "toy_reversibility.json"))
 p.add_argument("--run_dir", default=None)     # one JSON per (model, seed); existing runs are skipped, then aggregated
 p.add_argument("--aggregate_only", action="store_true")
+p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")    # revision 2: GPU
 args = p.parse_args()
-torch.set_num_threads(max(1, os.cpu_count() or 1))
+torch.set_num_threads(4)
+DEV = torch.device(args.device)
 
 DT, U_MAX, G = 0.1, 2.0, torch.tensor([0.0, -0.5])
 C, R0, SIG, K = torch.tensor([0.0, -1.0]), 1.0, 0.1, 3.0
@@ -40,12 +43,13 @@ lift = nn.Sequential(nn.Linear(2, 64), nn.Tanh(), nn.Linear(64, OBS), nn.Tanh())
 
 
 def drift(p):
-    w = torch.sigmoid((R0 - (p - C).norm(dim=-1, keepdim=True)) / SIG)
-    return G - K * w * (p - C)
+    c = C.to(p.device)
+    w = torch.sigmoid((R0 - (p - c).norm(dim=-1, keepdim=True)) / SIG)
+    return G.to(p.device) - K * w * (p - c)
 
 
 def in_well(p):
-    return (p - C).norm(dim=-1) < R0
+    return (p - C.to(p.device)).norm(dim=-1) < R0
 
 
 def sample(n, gen):
@@ -64,10 +68,39 @@ def undo_truth(p, p1):
 mlp = lambda i, o: nn.Sequential(nn.Linear(i, 128), nn.GELU(), nn.Linear(128, 128), nn.GELU(), nn.Linear(128, o))
 
 
+def batch(n, gen, two_frame=False):
+    """Inputs and targets of one batch. Single-frame models see o_t; the two-frame (velocity) variant sees
+    [o_t, o_t - o_{t-1}] and, for the swapped pair, the time-reversed velocities [o_{t+1}, o_{t+1} - o_{t+2}]."""
+    to = lambda d: {k: v.to(DEV) for k, v in d.items()}                    # sampling on the CPU, compute on DEV
+    if not two_frame:                                                       # identical random draws as revision 1
+        p, u, p1, idle = sample(n, gen); o0, o1 = lift(p), lift(p1)
+        return to(dict(p=p, u=u, p1=p1, idle=idle, o0=o0, o1=o1, X0=o0, X1=o1, X1r=o1, X0r=o0))
+    pm = torch.rand(n, 2, generator=gen) * 4 - 2; um = torch.rand(n, 2, generator=gen) * 2 - 1
+    p = pm + DT * (drift(pm) + um)                                          # a short trajectory p_{t-1} -> p_{t+2}
+    u = torch.rand(n, 2, generator=gen) * 2 - 1
+    idle = torch.rand(n, generator=gen) < 0.15
+    u[idle] = 0
+    p1 = p + DT * (drift(p) + u)
+    u2 = torch.rand(n, 2, generator=gen) * 2 - 1; p2 = p1 + DT * (drift(p1) + u2)
+    om, o0, o1, o2 = lift(pm), lift(p), lift(p1), lift(p2)
+    return to(dict(p=p, u=u, p1=p1, idle=idle, o0=o0, o1=o1,
+                   X0=torch.cat([o0, o0 - om], -1), X1=torch.cat([o1, o1 - o0], -1),
+                   X1r=torch.cat([o1, o1 - o2], -1), X0r=torch.cat([o0, o0 - o1], -1)))
+
+
+def parse_kind(kind):
+    """Model variant -> (core variant, anchored?, two-frame?). Revision 2 adds unanchored SR and G0 = 0 variants
+    and a two-frame (velocity) RAVI."""
+    two = kind == "rave_2f"
+    noanchor = kind.endswith("_noanchor")
+    core = "rave" if two else (kind[: -len("_noanchor")] if noanchor else kind)
+    return core, not noanchor, two
+
+
 class Base(nn.Module):
-    def __init__(self):
+    def __init__(self, inp=OBS):
         super().__init__()
-        self.enc, self.dec, self.idm_net = mlp(OBS, D), mlp(D, OBS), mlp(3 * OBS, M)
+        self.enc, self.dec, self.idm_net = mlp(inp, D), mlp(D, OBS), mlp(3 * inp, M)
 
     def idm(self, a, b): return self.idm_net(torch.cat([a, b, b - a], -1))
 
@@ -82,8 +115,8 @@ class LAM(Base):
 
 
 class RAVE(Base):
-    def __init__(self, use_drift=True):
-        super().__init__(); self.use_drift = use_drift
+    def __init__(self, use_drift=True, inp=OBS):
+        super().__init__(inp); self.use_drift = use_drift
         self.W = nn.Parameter(0.01 * torch.randn(M, D, D)); self.b = nn.Parameter(0.01 * torch.randn(M, D))
         self.V = nn.Parameter(torch.zeros(M, D, D))
         self.S0 = nn.Parameter(0.01 * torch.randn(D, D)); self.L0 = nn.Parameter(0.01 * torch.randn(D, D))
@@ -93,9 +126,9 @@ class RAVE(Base):
     def decode(self, s): return self.dec(s[:, :-1])
 
     def gens(self):
-        Gi = torch.zeros(M, D + 1, D + 1)
+        Gi = torch.zeros(M, D + 1, D + 1, device=self.W.device)
         Gi[:, :D, :D] = (self.W - self.W.transpose(1, 2)) + 0.5 * (self.V + self.V.transpose(1, 2)); Gi[:, :D, D] = self.b
-        G0 = torch.zeros(D + 1, D + 1)
+        G0 = torch.zeros(D + 1, D + 1, device=self.W.device)
         G0[:D, :D] = (self.S0 - self.S0.T) - self.L0 @ self.L0.T; G0[:D, D] = self.b0
         return (G0 if self.use_drift else torch.zeros_like(G0)), Gi
 
@@ -110,7 +143,7 @@ class RAVE(Base):
         G0, Gi = self.gens()
         X = torch.einsum("mij,nj->nim", Gi, S).reshape(-1, M); y = (S @ G0.T).reshape(-1, 1)
         if y.norm() == 0:
-            return torch.zeros(M), float("nan")
+            return torch.zeros(M, device=S.device), float("nan")
         c = torch.linalg.lstsq(X, y).solution.squeeze(-1)
         return c, ((y.squeeze(-1) - X @ c).norm() / y.norm()).item()
 
@@ -122,27 +155,29 @@ def auroc(pos, neg):
 
 def train(kind, seed):
     torch.manual_seed(seed); gen = torch.Generator().manual_seed(seed)
-    model = LAM() if kind in ("lam", "signrev") else RAVE(use_drift=(kind != "rave_nodrift"))
+    core, anchored, two = parse_kind(kind)
+    model = LAM() if core in ("lam", "signrev") else RAVE(use_drift=(core != "rave_nodrift"), inp=2 * OBS if two else OBS)
+    model = model.to(DEV)
     opt = torch.optim.Adam(model.parameters(), lr=1e-3); mse = F.mse_loss
     for _ in range(args.steps):
-        pp, u, p1, idle = sample(512, gen); o0, o1 = lift(pp), lift(p1)
+        B = batch(512, gen, two); pp, idle, o0, o1 = B["p"], B["idle"], B["o0"], B["o1"]
         anchor = idle & ~in_well(pp)                                        # idle steps seen by the anchor
-        s0, s1 = model.encode(o0), model.encode(o1)
-        z = model.idm(o0, o1); zn = z + 0.05 * torch.randn_like(z); s1h = model.fwd(s0, zn)
+        s0, s1 = model.encode(B["X0"]), model.encode(B["X1"])
+        z = model.idm(B["X0"], B["X1"]); zn = z + 0.05 * torch.randn_like(z); s1h = model.fwd(s0, zn)
         L = (mse(model.decode(s0), o0) + mse(model.decode(s1), o1) + mse(model.decode(s1h), o1) + mse(s1h, s1)
              + 1e-3 * z.pow(2).mean())
-        zb = model.idm(o1, o0)
-        if kind == "lam":
-            L = L + mse(model.decode(model.bwd(s1, zb)), o0)
-        elif kind == "signrev":
-            L = L + mse(model.decode(model.fwd(s1, zb)), o0) + mse(zb, -z)
+        zb = model.idm(B["X1r"], B["X0r"]); s1r = s1 if not two else model.encode(B["X1r"])
+        if core == "lam":
+            L = L + mse(model.decode(model.bwd(s1r, zb)), o0)
+        elif core == "signrev":
+            L = L + mse(model.decode(model.fwd(s1r, zb)), o0) + mse(zb, -z)
         else:
             L = L + mse(model.decode(model.step(-model.gen(zn), s1)), o0)
-            if kind == "rave_sr":
-                L = L + mse(model.decode(model.step(model.gen(zb, 1.0), s1)), o0) + mse(zb, -z)
-            elif kind != "rave_norev":
-                L = L + mse(model.decode(model.step(model.gen(zb, -1.0), s1)), o0) + mse(zb, -z)
-            if kind != "rave_noanchor" and anchor.any():
+            if core == "rave_sr":
+                L = L + mse(model.decode(model.step(model.gen(zb, 1.0), s1r)), o0) + mse(zb, -z)
+            elif core != "rave_norev":
+                L = L + mse(model.decode(model.step(model.gen(zb, -1.0), s1r)), o0) + mse(zb, -z)
+            if anchored and anchor.any():
                 L = L + z[anchor].pow(2).mean()
             L = L + 1e-3 * model.V.pow(2).sum()
         opt.zero_grad(); L.backward(); nn.utils.clip_grad_norm_(model.parameters(), 1.0); opt.step()
@@ -158,25 +193,27 @@ def roll(model, s, zs):
 def evaluate(model, kind, seed, n=6000):
     gen = torch.Generator().manual_seed(10_000 + seed)
     koop = isinstance(model, RAVE); r = {}
-    pp, u, p1, idle = sample(n, gen); o0, o1 = lift(pp), lift(p1)
+    core, _, two = parse_kind(kind)
+    B = batch(n, gen, two); pp, u, p1, idle, o0, o1 = B["p"], B["u"], B["p1"], B["idle"], B["o0"], B["o1"]
+    X0, X1, X1r, X0r = B["X0"], B["X1"], B["X1r"], B["X0r"]
     ustar = undo_truth(pp, p1); irrev = (ustar.abs().amax(1) > U_MAX)
     r["frac_irreversible"] = irrev.float().mean().item()
     with torch.no_grad():
-        s0, s1 = model.encode(o0), model.encode(o1); z = model.idm(o0, o1)
+        s0, s1 = model.encode(X0), model.encode(X1); z = model.idm(X0, X1)
         rel = lambda pred, tgt, other: (F.mse_loss(pred, tgt) / F.mse_loss(other, tgt)).item()
         r["forward_rel_err"] = rel(model.decode(model.fwd(s0, z)), o1, o0)
-        if kind == "lam":
-            ob = model.decode(model.bwd(s1, model.idm(o1, o0)))
-        elif kind == "signrev":
+        if core == "lam":
+            ob = model.decode(model.bwd(model.encode(X1r), model.idm(X1r, X0r)))
+        elif core == "signrev":
             ob = model.decode(model.fwd(s1, -z))
         else:
             ob = model.decode(model.step(-model.gen(z), s1))
         r["backward_rel_err"] = rel(ob, o0, o1)
         # gauge-fixing linear probe z -> u, fitted on labeled transitions from separate data (as in the original toy)
-        pq, uq, pq1, _ = sample(8000, torch.Generator().manual_seed(20_000 + seed))
-        Zq = model.idm(lift(pq), lift(pq1)); Xq = torch.cat([Zq, torch.ones(len(Zq), 1)], -1)
+        Bq = batch(8000, torch.Generator().manual_seed(20_000 + seed), two); uq = Bq["u"]
+        Zq = model.idm(Bq["X0"], Bq["X1"]); Xq = torch.cat([Zq, torch.ones(len(Zq), 1, device=DEV)], -1)
         Wp = torch.linalg.lstsq(Xq, uq).solution
-        probe = lambda zz: torch.cat([zz, torch.ones(len(zz), 1)], -1) @ Wp
+        probe = lambda zz: torch.cat([zz, torch.ones(len(zz), 1, device=DEV)], -1) @ Wp
         uh = probe(z)
         r["probe_R2"] = (1 - ((uh - u) ** 2).sum() / ((u - u.mean(0)) ** 2).sum()).item()
         # drift absorption: idle steps inside the well (u = 0, strong passive motion)
@@ -185,7 +222,7 @@ def evaluate(model, kind, seed, n=6000):
         r["absorbed_in_well"] = (uh[iw].norm(dim=1).mean() / rms_u).item()
         r["absorbed_outside"] = (uh[io].norm(dim=1).mean() / rms_u).item()
         # reversal consistency of the IDM
-        r["cos_idm_swap_negz"] = F.cosine_similarity(model.idm(o1, o0), -z).mean().item()
+        r["cos_idm_swap_negz"] = F.cosine_similarity(model.idm(X1r, X0r), -z).mean().item()
         # reversibility scores against the ground-truth label
         sc = {"feat_change": (o1 - o0).norm(dim=1), "znorm": z.norm(dim=1), "true_drift": drift(p1).norm(dim=1)}
         if koop:
@@ -200,7 +237,7 @@ def evaluate(model, kind, seed, n=6000):
                 for k in range(5):                                          # random drift of matched structure and norm
                     gk = torch.Generator().manual_seed(30_000 + 10 * seed + k)
                     Sr, Lr, br = torch.randn(D, D, generator=gk), torch.randn(D, D, generator=gk), torch.randn(D, generator=gk)
-                    Gr = torch.zeros(D + 1, D + 1); Gr[:D, :D] = Sr - Sr.T - Lr @ Lr.T; Gr[:D, D] = br
+                    Gr = torch.zeros(D + 1, D + 1); Gr[:D, :D] = Sr - Sr.T - Lr @ Lr.T; Gr[:D, D] = br; Gr = Gr.to(DEV)
                     Gr = Gr * (G0.norm() / Gr.norm())
                     X = torch.einsum("mij,nj->nim", Gi, s0).reshape(-1, M); y = (s0 @ Gr.T).reshape(-1, 1)
                     cr = torch.linalg.lstsq(X, y).solution; vals.append(((y - X @ cr).norm() / y.norm()).item())
@@ -209,25 +246,25 @@ def evaluate(model, kind, seed, n=6000):
         J = torch.func.vmap(torch.func.jacrev(lambda x, zz: model.fwd(x[None], zz[None])[0]))(s0.detach(), z.detach())
         sv = torch.linalg.svdvals(J); sc["kappa"] = (sv[:, 0] / sv[:, -1]).detach()
     # motion-matched negatives: reversible steps with the same true action magnitude
-    pos_i, neg_i = torch.where(irrev)[0].numpy(), torch.where(~irrev)[0].numpy()
-    un, dn = u.norm(dim=1).numpy(), (p1 - pp).norm(dim=1).numpy()
+    pos_i, neg_i = torch.where(irrev)[0].cpu().numpy(), torch.where(~irrev)[0].cpu().numpy()
+    un, dn = u.norm(dim=1).cpu().numpy(), (p1 - pp).norm(dim=1).cpu().numpy()
     mm = np.concatenate([neg_i[np.argsort(np.abs(un[neg_i] - un[i]))[:3]] for i in pos_i])   # same agent motion
     dm = np.concatenate([neg_i[np.argsort(np.abs(dn[neg_i] - dn[i]))[:3]] for i in pos_i])   # same displacement
     for k, v in sc.items():
-        v = v.detach().numpy()
+        v = v.detach().cpu().numpy()
         r[f"auroc_{k}"] = auroc(v[pos_i], v[neg_i]); r[f"auroc_mm_{k}"] = auroc(v[pos_i], v[mm])
         r[f"auroc_dm_{k}"] = auroc(v[pos_i], v[dm])
     # undo: model's closed-form reverse action and state-specific planned undo, executed in the true simulator
-    sub = torch.arange(0, n, 6)                                             # 1,000 transitions
-    o0s, o1s, ps, p1s, us = o0[sub], o1[sub], pp[sub], p1[sub], u[sub]; irs = irrev[sub]
+    sub = torch.arange(0, n, 6, device=DEV)                                             # 1,000 transitions
+    o0s, ps, p1s, us = o0[sub], pp[sub], p1[sub], u[sub]; irs = irrev[sub]
     with torch.no_grad():
-        s1s = model.encode(o1s); zs = model.idm(o0s, o1s)
-        if kind == "lam":
-            z_init = model.idm(o1s, o0s)
-        elif kind in ("signrev", "rave_sr"):
+        s1s = model.encode(X1[sub]); zs = model.idm(X0[sub], X1[sub])
+        if core == "lam":
+            z_init = model.idm(X1r[sub], X0r[sub])
+        elif core in ("signrev", "rave_sr"):
             z_init = -zs
         else:
-            z_init = -zs - 2 * model.drift_action(model.encode(o0))[0]
+            z_init = -zs - 2 * model.drift_action(model.encode(X0))[0]
     zp = z_init.clone().requires_grad_(True); opt = torch.optim.Adam([zp], lr=0.05)
     for _ in range(300):
         loss = (model.decode(model.fwd(s1s, zp)) - o0s).pow(2).sum(1).mean()
@@ -264,8 +301,12 @@ for f in sorted(os.listdir(run_dir)):
 out = {}
 for kind, rs in runs.items():
     keys = sorted(k for k in set().union(*rs) if k not in ("model", "seed", "steps"))
-    out[kind] = {k: [float(np.mean([r[k] for r in rs if k in r])), float(np.std([r[k] for r in rs if k in r])),
-                     len([r for r in rs if k in r])] for k in keys}
+    from scipy import stats as _st                                          # [mean, std, n, 95% CI half-width]
+    def summ(v):
+        v = np.array(v, float); n_ = len(v)
+        ci = float(_st.t.ppf(0.975, n_ - 1) * v.std(ddof=1) / np.sqrt(n_)) if n_ > 1 else float("nan")
+        return [float(v.mean()), float(v.std()), n_, ci]
+    out[kind] = {k: summ([r[k] for r in rs if k in r]) for k in keys}
 json.dump({"config": vars(args), "seeds": {k: sorted(r["seed"] for r in v) for k, v in runs.items()}, "results": out},
           open(args.out, "w"), indent=1)
 print("wrote", os.path.abspath(args.out))
