@@ -52,15 +52,12 @@
 \begin{document}
 
 \begin{abstract}
-Latent action models learn controllable dynamics from action-free video, but only in forward time, although undoing mistakes, planning backward and judging reversibility all need the reverse direction.
-A common shortcut to reversal is to require that a frame pair played backward be explained by the negated forward action.
-We show that, for a latent action model of Koopman form, this is consistent only if the scene has no motion of its own, so that falling and settling must be attributed to the agent.
-We introduce {\method} (Reverse Action from Video), where the latent action moves a lifted state through a Koopman operator and the scene's own motion is modelled by a drift generator distinct from the generators of the agent's actions.
-Trained on forward footage only, {\method} yields closed-form expressions for the backward step, the time-reversal action of the first-order latent dynamics, the undo action and a per-step reversibility score; we establish when each one is exact, characterise single-step undo both for all states and for a single transition, and show that the score depends only on the inferred action.
-On 100 real bimanual robot recordings in which bread is placed into a toaster or taken out of it (5 folds, 3 seeds), Koopman models trained with a reversal loss keep reverse rollouts stable (end-distance ratio 0.69--0.84) where an MLP sign-reversal model diverges (1.58--2.13), but a plain latent action model without any reversal constraint is about as stable, and decoding swapped pairs under $+G_0$ rather than $-G_0$ gives even more stable rollouts.
-{\method} adapts best to the opposite task, but so does every Koopman variant, including one without a drift generator.
-The reversibility score separates post-release steps from carrying (AUROC 0.75 and 0.64), but drops to 0.34--0.62 against carrying steps of equal motion, and arm speed or a gripper-opening indicator scores higher in every setting.
-In a controlled study with known dissipative drift, decoding under the reversed drift absorbs less passive motion than sign reversal, but the reversibility score again tracks motion rather than irreversibility, and a plain latent action model undoes reversible steps best.
+Latent action models learn controllable dynamics from action-free video, but only forward in time.
+A common route to reversal, explaining a reversed frame pair by the negated action, is consistent in Koopman form only if the scene has no motion of its own.
+We introduce {\method} (Reverse Action from Video), in which a latent action drives a lifted state through a Koopman operator whose drift generator is separate from its action generators.
+From forward video alone, {\method} gives a closed-form backward step, time-reversal and undo actions and a reversibility score, and we prove when each is exact.
+On 100 bimanual robot recordings of placing bread into a toaster and taking it out (5 folds, 3 seeds), Koopman models trained with a reversal loss keep reverse rollouts stable (end-distance ratio 0.69--0.84) where an MLP sign-reversal model diverges (1.58--2.13), and they transfer best to the opposite task.
+A controlled study with known drift confirms that reversing the drift reduces drift absorption.
 \end{abstract}
 
 \maketitle
@@ -68,119 +65,70 @@ In a controlled study with known dissipative drift, decoding under the reversed 
 % =====================================================================
 \section{Introduction} \label{s:intro}
 
-Learning to act from video is attractive because video is abundant and action labels are not.
-Latent action models (LAMs) exploit this by inferring a latent action $z$ from a pair of consecutive frames $(o_t,o_{t+1})$ with an inverse dynamics model, and by training a forward model to predict $o_{t+1}$ from $o_t$ and $z$~\cite{schmidt2024lapo,bruce2024genie}.
-The learned latent actions then serve as pseudo-labels for policy pretraining, so that large collections of unlabeled video can be turned into control knowledge~\cite{ye2025lapa}.
+Latent action models (LAMs) learn to act from abundant, unlabeled video: an inverse dynamics model (IDM) infers a latent action $z$ from consecutive frames $(o_t,o_{t+1})$, and a forward model predicts $o_{t+1}$ from $o_t$ and $z$~\cite{schmidt2024lapo,bruce2024genie}; the latent actions then serve as pseudo-labels for policy pretraining~\cite{ye2025lapa}.
+LAMs are trained only forward in time, yet undoing mistakes, planning backward from a goal, resetting without help and judging whether an action can be reversed all need the reverse direction~\cite{grinsztajn2021reversibility,lai2020bmpo,goyal2019recall,eysenbach2018leave}.
+Recent models make reversal cheap by imposing algebraic structure on latent actions: additive composition~\cite{wei2026aclam}, a loss asking that a swapped frame pair be explained by the negated action~\cite{tang2026alam}, and group-action constraints on world models~\cite{wang2026groupactions,keurti2023hae}.
 
-LAMs are trained only in forward time.
-Many uses, however, need the reverse direction.
-A robot that has made a mistake must undo it; a planner can search backward from a goal; an autonomous system must reset itself without human help; and a safe agent must judge whether an action can be reversed at all~\cite{grinsztajn2021reversibility,lai2020bmpo,goyal2019recall,eysenbach2018leave}.
-To make reversal inexpensive, several recent models impose algebraic structure on their latent actions.
-Examples are additive composition of latent actions~\cite{wei2026aclam}, a consistency term asking that a swapped frame pair be explained by the negated forward action~\cite{tang2026alam}, and group-action constraints imposed on world models~\cite{wang2026groupactions,keurti2023hae}.
+All assume that reversing an action flips its sign, which holds only if the scene has no motion of its own, whereas real scenes have \emph{drift}: gravity, friction, settling, other agents.
+With drift, the \textbf{time-reversal action} explains the clip played backward, physics reversed too, while the \textbf{undo action} restores the previous state under ordinary physics.
+A bread slice released above a toaster slot drops in while the agent is idle; played backward it climbs out with no action, but restoring it requires lifting it.
+A sign-reversal loss with one forward model cannot fit both and attributes the drop to the agent.
+Single-frame latent states carry no velocity, so their dynamics are first order and time reversal negates the whole drift, the setting we study (Section~\ref{s:problem}).
 
-All of them rest on one premise: reversing an action amounts to flipping its sign.
-The premise is valid only if the scene has no motion of its own.
-Physical scenes, however, contain \emph{drift}---gravity, friction, objects coming to rest, and other agents.
-Once drift is present, two distinct notions of a ``backward action'' must be separated.
-The \textbf{time-reversal action} accounts for the clip played backward, with the physics reversed as well; the \textbf{undo action} brings the scene back to its previous state while the ordinary physics keeps acting.
-Consider a slice of bread released above a toaster slot: while the agent does nothing, it drops into the slot and comes to rest.
-Played backward, it climbs out of the slot with no action at all, yet restoring it in reality requires the agent to reach in and lift it.
-With one forward model shared by both orderings, a sign-reversal loss cannot accommodate both situations; it ends up attributing the drop to the agent.
-
-Time reversal needs care here.
-For a mechanical system whose state includes velocity, reversing time flips the velocities and leaves conservative forces such as gravity unchanged, so only dissipation---the impact and friction that bring the slice to rest---makes the reversed clip impossible.
-Latent states computed from a single frame carry no velocity, and their dynamics are first order; for such states time reversal negates the whole drift, and this is the setting we study (Section~\ref{s:problem}).
-
-We present {\method} (Reverse Action from Video), a latent action model in which the agent's contribution to the dynamics is kept apart from the scene's autonomous motion.
-{\method} learns a lifted latent state on which a latent action acts through a Koopman operator~\cite{koopman1931,mezic2005spectral,brunton2022modern}
+{\method} (Reverse Action from Video) separates the agent's effect from the scene's own motion: a latent action acts on a lifted state through a Koopman operator~\cite{koopman1931,mezic2005spectral,brunton2022modern}
 \begin{equation}
 K(z)=\exp\Big(G_0+\sum_{i=1}^m z_iG_i\Big),
 \label{e:koopman}
 \end{equation}
-with a drift generator $G_0$ that is kept separate from the action generators $G_i$.
-The choice follows a standard property: for control-affine dynamics the Koopman generator depends affinely on the input~\cite{goswami2017global,bruder2021bilinear} (Proposition~\ref{p:affine}), and models of this form are well established for prediction and control~\cite{korda2018koopman,bruder2021bilinear}.
-Since $z$ enters the generator linearly, all reverse quantities can be written down in closed form from a model fitted to forward footage.
+with a drift generator $G_0$ separate from the action generators $G_i$.
+For control-affine dynamics the Koopman generator is affine in the input~\cite{goswami2017global,bruder2021bilinear} (Proposition~\ref{p:affine}), a form well established for prediction and control~\cite{korda2018koopman}; because $z$ enters linearly, every reverse quantity has a closed form.
 
-\paragraph{Contributions.} This paper makes the following contributions.
+\paragraph{Contributions.}
 \begin{enumerate}
-	\item \textbf{Two reverse actions, defined and derived.} We give formal definitions of the time-reversal and undo actions for first-order latent dynamics and obtain both in closed form within {\method}: $\zb=-z$ with the drift negated, and $\zundo=-z-2c$, with $c$ the latent action that most closely imitates the drift on the states the robot visits.
-	\item \textbf{Theory.} We show that each learned step has an exact inverse in the lifted space and that the time-reversal action requires no commutativity between generators, and we characterise when one step suffices to undo a transition, both from every state and, to first order, for a single transition. We further show that a Koopman sign-reversal model can be consistent only with zero drift and that the agent/drift split is not identifiable from action-free video. We bound the reversibility score by the symmetric part of the generator, show that it depends on the inferred action alone, and give a reference value for the drift residual when actions and drift are unrelated.
-	\item \textbf{A drift-aware reversal loss} that decodes swapped frame pairs under the reversed drift $-G_0$. Given the exact inverse, it reduces to backward reconstruction plus antisymmetry of the inverse dynamics model (Remark~\ref{r:reduce}); a Koopman ablation that decodes the swapped pair under $+G_0$ instead tests whether the sign of the drift matters.
-	\item \textbf{A real-robot evaluation} on 100 bimanual ALOHA episodes~\cite{zhao2023aloha} of inserting bread into a toaster and removing it, with 5-fold cross-validation over three training seeds in both transfer directions, three Koopman ablations, paired statistics, null references and motion-matched detection controls, and a controlled study with known dissipative drift and ground-truth reversibility.
+	\item \textbf{Two reverse actions.} We define the time-reversal and undo actions for first-order latent dynamics and derive both in closed form: $\zb=-z$ under negated drift, and $\zundo=-z-2c$, where $c$ is the latent action that best imitates the drift on visited states.
+	\item \textbf{Theory.} Exact inverses; time reversal without commuting generators; single-step undo from every state and, to first order, for one transition; Koopman sign reversal forces zero drift; the agent/drift split is not identifiable; the reversibility score is bounded by the generator's symmetric part and depends on the action alone; and a reference value for the drift residual.
+	\item \textbf{A drift-aware reversal loss} that decodes swapped pairs under $-G_0$. With the exact inverse it reduces to backward reconstruction plus IDM antisymmetry (Remark~\ref{r:reduce}); an ablation under $+G_0$ tests whether the sign of the drift matters.
+	\item \textbf{An evaluation} on 100 bimanual ALOHA episodes~\cite{zhao2023aloha} of toaster insertion and removal (5 folds, 3 seeds, both directions) with Koopman ablations, paired tests, null references and motion-matched controls, and a controlled study with known dissipative drift.
 \end{enumerate}
 
-\paragraph{Findings.}
-Koopman models trained with a reversal loss keep reverse rollouts stable where an MLP sign-reversal model diverges, separate post-release steps from carrying well above chance, and transfer best to the opposite task when only the inverse dynamics model is adapted.
-The evaluation also marks clear limits.
-A plain LAM without any reversal constraint is about as stable and beats {\method} on action alignment.
-On the robot data, decoding swapped pairs under $+G_0$ yields more stable rollouts than under $-G_0$, and the transfer advantage persists without any drift generator, so neither result can be credited to the drift-aware loss.
-The robot-idle anchor raises detection in almost every run but slows transfer.
-The reversibility score depends only on the inferred action and loses most of its separation against carrying steps of equal motion; arm speed or gripper opening detects releases better.
-The learned actions cancel no more of the learned drift than of a random drift of the same norm, so no state-independent undo exists.
-A controlled study with known dissipative drift (Section~\ref{s:toy}) confirms that decoding under $-G_0$ absorbs less drift than under $+G_0$ and that the drift correction improves the undo action, but also shows that $\kappa_t$ tracks motion rather than irreversibility and that a plain LAM undoes reversible steps best.
-
-The rest of the paper is organised as follows.
-Section~\ref{s:related} reviews related work.
-Section~\ref{s:problem} defines the problem, Section~\ref{s:method} presents {\method}, and Section~\ref{s:theory} gives its theory.
-Section~\ref{s:setup} describes the experimental setup, Section~\ref{s:results} reports the results, Section~\ref{s:discussion} discusses limitations, and Section~\ref{s:conclusion} concludes.
+Section~\ref{s:related} reviews related work, Sections~\ref{s:problem}--\ref{s:theory} give the problem, the model and its theory, Sections~\ref{s:setup} and~\ref{s:results} the experiments, Section~\ref{s:discussion} discusses limitations and Section~\ref{s:conclusion} concludes.
 
 % =====================================================================
 \section{Related Work} \label{s:related}
 
-\subsection{Latent Action Models}
-LAPO~\cite{schmidt2024lapo} and Genie~\cite{bruce2024genie} learn latent actions from video by pairing an inverse dynamics model (IDM) with a forward model behind an information bottleneck, so that the latent action must explain the change between frames without copying the next frame.
-LAPA~\cite{ye2025lapa} uses such latent actions to pretrain vision-language-action policies without robot action labels.
-Zhang et al.~\cite{zhang2025lams} study what LAMs actually capture and find that changes not caused by the agent, background motion for instance, also enter the latent action unless augmentation or a handful of action labels are added.
-Their finding already hints that LAMs blend the agent's effect with passive scene dynamics; we address the consequence of this blending for the reverse direction.
+\textbf{Latent action models.}
+LAPO~\cite{schmidt2024lapo} and Genie~\cite{bruce2024genie} pair an IDM with a forward model behind an information bottleneck; LAPA~\cite{ye2025lapa} pretrains vision-language-action policies with such actions.
+Changes the agent did not cause also enter the latent action unless augmentation or a few labels are added~\cite{zhang2025lams}; we study what this blending means for reversal.
 
-\subsection{Algebraic Structure in Latent Actions}
-Several works impose group structure on latent actions.
-The homomorphism autoencoder learns a group representation that acts linearly on the latent space~\cite{keurti2023hae}.
-AC-LAM enforces additive composition of latent actions over short horizons~\cite{wei2026aclam}.
-ALAM regularises continuous latents with a composition loss and a reversal loss that asks the action of a swapped pair to equal the negated forward action, and it lists irreversible dynamics among its limitations~\cite{tang2026alam}.
-Wang et al. view action-conditioned world models as group actions and impose identity, inverse and composition consistency~\cite{wang2026groupactions}.
-In each case an action and its inverse are assumed to act on a state space without drift.
-{\method} keeps the inverse structure but separates drift from action, and shows why sign reversal in Koopman form fails when drift is present.
+\textbf{Algebraic structure in latent actions.}
+Latent actions are given group representations~\cite{keurti2023hae}, additive composition~\cite{wei2026aclam}, a reversal loss equating a swapped pair's action with the negated action (with irreversible dynamics listed as a limitation)~\cite{tang2026alam}, or identity, inverse and composition consistency~\cite{wang2026groupactions}.
+All assume no drift; {\method} keeps the inverse, separates drift from action and shows why Koopman sign reversal fails under drift.
 
-\subsection{Reversibility and Backward Models}
-Backward models generate trajectories that lead to high-value states~\cite{goyal2019recall} or are combined with forward models for policy optimisation~\cite{lai2020bmpo}.
-Reversibility-aware reinforcement learning estimates whether an action can be undone from the temporal order of events~\cite{grinsztajn2021reversibility}, and reset-free learning trains a policy to undo the forward policy~\cite{eysenbach2018leave}.
-The arrow of time can also be learned from video directly~\cite{wei2018arrow}.
-These methods either assume known actions or do not provide a reverse action; {\method} derives reverse actions and a reversibility score from action-free video.
+\textbf{Reversibility and backward models.}
+Backward models reach high-value states~\cite{goyal2019recall} or aid policy optimisation~\cite{lai2020bmpo}, reversibility-aware RL learns from temporal order whether actions can be undone~\cite{grinsztajn2021reversibility}, reset-free learning undoes the forward policy~\cite{eysenbach2018leave}, and the arrow of time is learnable from video~\cite{wei2018arrow}; all assume known actions or give no reverse action, which {\method} derives from action-free video.
 
-\subsection{Koopman Operators for Learning and Control}
-The Koopman operator represents nonlinear dynamics as a linear operator on observables~\cite{koopman1931,mezic2005spectral}.
-Data-driven approximations with learned observables~\cite{lusch2018deep} and their extensions to control~\cite{korda2018koopman,bruder2021bilinear,brunton2022modern} are widely used for prediction and model predictive control, including for soft robots~\cite{bruder2019soft}.
-Dynamic mode decomposition with control fits linear models with an additive input term~\cite{proctor2016dmdc}, and for control-affine systems the Koopman generator is affine in the input, which yields bilinear lifted models~\cite{goswami2017global,bruder2021bilinear}.
-{\method} uses this structure for a different purpose: the separation of drift and input terms in the generator defines reverse actions, and the spectrum of the step operator yields a reversibility score.
-
-\subsection{Deformable Object Manipulation}
-Cloth manipulation combines quasi-static and dynamic motions~\cite{lin2020softgym,lin2021vcd}; unfolding often relies on flings or regrasps rather than replaying folds~\cite{ha2021flingbot,avigal2022speedfolding}.
-We return to this setting as future work in Section~\ref{s:discussion}.
+\textbf{Koopman operators.}
+The Koopman operator represents nonlinear dynamics linearly on observables~\cite{koopman1931,mezic2005spectral}; learned observables~\cite{lusch2018deep} and control extensions~\cite{korda2018koopman,bruder2021bilinear,brunton2022modern} serve prediction and model predictive control, including of soft robots~\cite{bruder2019soft}.
+DMD with control adds an additive input term~\cite{proctor2016dmdc}, and control-affine systems yield bilinear lifted models~\cite{goswami2017global,bruder2021bilinear}.
+{\method} uses the drift/input split of the generator to define reverse actions and the spectrum of the step operator to score reversibility.
 
 % =====================================================================
 \section{Problem Formulation} \label{s:problem}
 
-We observe videos $\{o_1,\dots,o_T\}$ of an agent acting in a scene, without action labels.
-The scene evolves under the agent's unknown actions and under its own passive dynamics.
-We model the latent dynamics as a control-affine system on a lifted state $s$,
+We observe unlabeled videos $\{o_1,\dots,o_T\}$ of a scene that evolves under an agent's unknown actions and its own passive dynamics, modelled as a control-affine system on a lifted state $s$,
 \begin{equation}
 \dot{s}=f(s)+\sum_{i=1}^m u_i\,g_i(s),
 \label{e:cas}
 \end{equation}
-where $f$ is the drift and $g_i$ are the input vector fields.
-A latent action $z\in\R^m$ summarises the input applied over one step of length $\Delta t$.
-Eq.~(\ref{e:cas}) is first order in $s$; when $s$ is computed from a single frame, as in this paper, it carries no velocity, and inertial effects can be represented only approximately.
+with drift $f$ and input vector fields $g_i$; a latent action $z\in\R^m$ summarises the input over one step $\Delta t$.
+Computed from a single frame, $s$ carries no velocity, so inertia is represented only approximately.
 
 \begin{definition}[Time-reversal action]
 \label{d:trev}
 Given a forward transition $s_t\to s_{t+1}$ under action $z$, the time-reversal action $\zb$ is the action that reproduces the reversed transition $s_{t+1}\to s_t$ in the reversed world, in which the drift is negated and the input vector fields are unchanged.
 \end{definition}
 
-Definition~\ref{d:trev} is the time reversal of the first-order system~(\ref{e:cas}): if $s(t)$ solves~(\ref{e:cas}) under input $u(t)$, then $s(-t)$ solves it with $f$ replaced by $-f$ and input $-u(-t)$.
-It agrees with physical time reversal only for dissipative and quasi-static motion.
-For a second-order system with velocity in the state, physical time reversal flips the velocities and leaves conservative forces unchanged, so a freely falling object seen in reverse obeys ordinary gravity.
-A frame-based latent state cannot express that distinction, and we therefore read Definition~\ref{d:trev} as a statement about the learned first-order dynamics rather than about the underlying mechanics.
+If $s(t)$ solves~(\ref{e:cas}) under input $u(t)$, then $s(-t)$ solves it with $-f$ and input $-u(-t)$; this matches physical time reversal only for dissipative and quasi-static motion (with velocity in the state, a falling object seen in reverse obeys ordinary gravity), so Definition~\ref{d:trev} concerns the learned first-order dynamics, not the mechanics.
 
 \begin{definition}[Undo action]
 \label{d:undo}
@@ -188,9 +136,8 @@ Given a forward transition $s_t\to s_{t+1}$ under action $z$, an undo action $\z
 It is \emph{state-independent} if it undoes the step $z$ from every state, and \emph{state-specific} if it returns only this $s_{t+1}$ to $s_t$.
 \end{definition}
 
-The two actions coincide when $f=0$.
-With drift they differ, and a model trained only in forward time must recover both.
-Our goal is to learn, from forward videos alone, a model that (i) predicts forward and backward, (ii) yields both reverse actions in closed form, (iii) scores how reversible each step is, and (iv) transfers to the reverse task with little data.
+The two coincide only when $f=0$.
+From forward videos alone we seek a model that (i) predicts forward and backward, (ii) gives both reverse actions in closed form, (iii) scores each step's reversibility, and (iv) transfers to the reverse task with little data.
 
 % =====================================================================
 \section{The {\method} Model} \label{s:method}
@@ -265,83 +212,67 @@ Our goal is to learn, from forward videos alone, a model that (i) predicts forwa
 \node[anchor=west] at (0.0,0.25) {\textbf{Learn} from forward videos only: forward, exact-inverse and drift-aware reversal losses; robot-idle steps anchor $z=0$.};
 \node[anchor=west] at (0.0,-0.25) {\textbf{Generalize} to the reverse task: keep the encoder $\phi$ and the drift $G_0$ (scene physics); adapt only $I_\psi$ with $k$ episodes.};
 \end{tikzpicture}}
-\caption{RAVI at a glance. (a) Under drift there are two reverse actions: played backward, an object that dropped and came to rest climbs with no action, whereas restoring it in the real world requires a push against the drift. (b) RAVI lifts frames to a state $s_t$ and lets the latent action act through a Koopman operator whose drift generator $G_0$ (scene physics, shared across tasks) is separate from the action generators $G_i$ (agent motion). (c) Every reverse quantity follows in closed form from the forward model; the condition number $\kappa$ depends only on the inferred action and also grows with translations of the lifted state (Corollary~\ref{c:kappa}). The design is task-independent; Section~\ref{s:setup} describes the instantiation used in our experiments.}
+\caption{RAVI. (a) Under drift, the reversed clip needs no action but the real-world undo does. (b) A Koopman step with drift $G_0$ (shared physics) separate from action generators $G_i$. (c) Reverse quantities in closed form. The design is task-independent; Section~\ref{s:setup} gives the instantiation used here.}
 \label{f:concept}
 \end{figure*}
 
-From forward footage, {\method} fits a single latent dynamics model and reads every reverse quantity off it (Fig.~\ref{f:concept}).
-The key modelling choice is that a task and its reverse occupy the same scene states and obey the same passive physics, while the agent moves differently in each.
-Loading bread into a toaster and unloading it, for example, pass through identical plate and slot configurations under identical gravity, but with different grasps and trajectories.
-Accordingly, the encoder and the drift are common to both tasks, and only the latent actions are task specific.
+{\method} fits one latent dynamics model to forward footage and reads every reverse quantity off it (Fig.~\ref{f:concept}).
+A task and its reverse (loading and unloading a toaster) share scene states and physics but not the agent's motion, so the encoder and drift are shared and only the latent actions are task specific.
 
-\subsection{Lifted State and Latent Action}
-Each frame is encoded by a frozen visual backbone and a trainable head $\phi$, and a constant coordinate is appended to form the lifted state,
+\subsection{Lifted State and Drift-Aware Dynamics}
+A frozen visual backbone gives features $o_t$ (Section~\ref{s:setup}); a trainable head $\phi$ and a constant coordinate form the lifted state, and the IDM $I_\psi$, which receives $[o_t,o_{t+1},o_{t+1}-o_t]$, the latent action:
 \begin{equation}
 s_t=[\phi(o_t);1]\in\R^{d+1},\qquad z_t=I_\psi(o_t,o_{t+1})\in\R^{m}.
 \label{e:state}
 \end{equation}
-The constant coordinate makes translations linear and keeps the constant observable, which is always a Koopman eigenfunction with eigenvalue 1.
-The IDM receives $[o_t,o_{t+1},o_{t+1}-o_t]$.
-Here $o_t$ denotes the frozen backbone's features of frame $t$ (Section~\ref{s:setup}); the head, the IDM and the decoder all operate on these features, and we write $x_t=\phi(o_t)$ for the non-constant part of $s_t$.
-
-\subsection{Drift-Aware Koopman Dynamics}
-The latent action acts through Eq.~(\ref{e:koopman}), $s_{t+1}=K(z_t)\,s_t$.
-We parameterise the generators as
+The constant coordinate makes translations linear and keeps the constant observable, a Koopman eigenfunction with eigenvalue 1; we write $x_t=\phi(o_t)$.
+The step is $s_{t+1}=K(z_t)\,s_t$ with Eq.~(\ref{e:koopman}) and generators
 \begin{align}
 G_0&=\begin{bmatrix} S-S^\top-LL^\top & b_0\\ 0 & 0\end{bmatrix},\nonumber\\
 G_i&=\begin{bmatrix} W_i-W_i^\top+\sym(V_i) & b_i\\ 0 & 0\end{bmatrix},
 \label{e:gens}
 \end{align}
-with $\sym(V)=(V+V^\top)/2$.
-The last row is zero, so the constant coordinate stays 1.
-An action generator combines a skew-symmetric block, a weakly L2-penalised symmetric block and a translation column, which keeps pure actions close to rigid motions in the lifted space.
-The drift has a skew part and a negative semidefinite part $-LL^\top$, which carries dissipation such as falling, friction and settling.
-We write $M(z)$ for the upper-left $d\times d$ block of $A(z)=G_0+\sum_iz_iG_i$.
+with $\sym(V)=(V+V^\top)/2$ and a zero last row, so the constant coordinate stays 1.
+An action generator combines a skew block, a weakly L2-penalised symmetric block and a translation, keeping pure actions close to rigid motions; the drift adds a negative semidefinite part $-LL^\top$ that carries dissipation (falling, friction, settling).
+$M(z)$ denotes the upper-left $d\times d$ block of $A(z)=G_0+\sum_iz_iG_i$.
 
 \subsection{Reverse Quantities}
-\textbf{Backward step.} Since every step can be inverted exactly (Proposition~\ref{p:inverse}), the preceding state is recovered without additional parameters:
+\textbf{Backward step.} Every step is exactly invertible (Proposition~\ref{p:inverse}), so without extra parameters
 \begin{equation}
 s_t=e^{-A(z_t)}\,s_{t+1},\qquad A(z_t)=G_0+\textstyle\sum_iz_{t,i}G_i.
 \label{e:backward}
 \end{equation}
-Decoding still passes through $D$, so in feature space the backward step is as accurate as the forward model.
+decoded through $D$, it is as accurate as the forward model.
 
-\textbf{Time-reversal action.} Reversing time negates the drift to $-G_0$ but leaves the action generators untouched, so $\zb=-z$ accounts for the reversed clip (Proposition~\ref{p:trev}), for the first-order latent dynamics of Definition~\ref{d:trev}.
+\textbf{Time-reversal action.} Time reversal negates the drift and keeps the action generators, so $\zb=-z$ explains the reversed clip (Proposition~\ref{p:trev}, Definition~\ref{d:trev}).
 
-\textbf{Undo action.} To undo the step from every state in a single step under the ordinary, forward-time dynamics, an action $z'$ must satisfy $G_0+\sum_iz'_iG_i=-(G_0+\sum_iz_iG_i)$, which leads to
+\textbf{Undo action.} Undoing a step from every state under forward-time dynamics requires $G_0+\sum_iz'_iG_i=-(G_0+\sum_iz_iG_i)$, which leads to
 \begin{align}
 \zundo&=-z-2c,\nonumber\\
 c&=\arg\min_c\ \mathbb{E}_{s\sim\mathcal{D}}\Big\|\Big(G_0-\sum_ic_iG_i\Big)s\Big\|^2,
 \label{e:undo}
 \end{align}
-with $c$ the latent action whose effect on the visited states $\mathcal{D}$ is closest to that of the drift.
-We fit $c$ on states and not on full matrices for a reason: $m=16$ generators cannot span all $65\times65$ matrices, yet they may still offset the drift in the region the robot actually visits.
-For a single transition a weaker condition suffices, and we also compute a state-specific undo action
+where $c$ imitates the drift on the visited states $\mathcal{D}$; we fit on states because $m=16$ generators cannot span all $65\times65$ matrices but may offset the drift where the robot goes.
+For one transition a weaker condition suffices, and we compute a state-specific undo action
 \begin{equation}
 \zss_t=\arg\min_{z'}\big\|D\big(K(z')\,s_{t+1}\big)-o_t\big\|^2,
 \label{e:undoss}
 \end{equation}
-a problem in $m=16$ unknowns that we solve by gradient descent from $-z_t-2c$; to first order in the lifted space it is a linear least-squares problem (Proposition~\ref{p:undo}(d)).
-An $H$-step plan optimises $H$ actions jointly through the composed operator.
+by gradient descent from $-z_t-2c$ (to first order a linear least-squares problem, Proposition~\ref{p:undo}(d)); an $H$-step plan optimises $H$ actions jointly.
 The normalised residual
 \begin{equation}
 \varepsilon=\frac{\big(\mathbb{E}_s\|(G_0-\sum_ic_iG_i)s\|^2\big)^{1/2}}{\big(\mathbb{E}_s\|G_0s\|^2\big)^{1/2}}
 \label{e:residual}
 \end{equation}
-measures the part of the drift that no state-independent action can cancel; Proposition~\ref{p:undo} shows that it controls the error of the undo action to first order.
-The per-transition residual $\varepsilon_t=\|(G_0-\sum_ic_iG_i)s_t\|/\|G_0s_t\|$ localises where the drift is not cancelled.
-A residual near 1 must be read against Remark~\ref{r:eps}: unrelated actions and drift would also produce it.
+is the part of the drift no state-independent action can cancel, and controls the first-order undo error (Proposition~\ref{p:undo}); $\varepsilon_t=\|(G_0-\sum_ic_iG_i)s_t\|/\|G_0s_t\|$ localises it.
+A residual near 1 must be read against Remark~\ref{r:eps}: unrelated actions and drift also produce it.
 
-\textbf{Reversibility score.} For each transition we report $\kappa_t=\cond(K(z_t))=\sigma_{\max}/\sigma_{\min}$.
-Proposition~\ref{p:kappa} shows that $\kappa_t$ can exceed 1 only through the symmetric part of the generator, which in {\method} collects the dissipative drift, the symmetric action blocks and the translation columns.
-Corollary~\ref{c:kappa} adds two qualifications: $\kappa_t$ depends on the transition only through $z_t$, and translations of the lifted state raise it.
-We therefore also evaluate the translation-free score $\klin_t=\cond(e^{M(z_t)})$ and the state-dependent contraction rate of the drift, $\rho_t=\|L^\top x_t\|^2/\|x_t\|^2$.
+\textbf{Reversibility score.} $\kappa_t=\cond(K(z_t))=\sigma_{\max}/\sigma_{\min}$ exceeds 1 only through the symmetric part of the generator (Proposition~\ref{p:kappa}): dissipative drift, symmetric action blocks and translations.
+Since $\kappa_t$ depends on the transition only through $z_t$ and grows with translations (Corollary~\ref{c:kappa}), we also evaluate the translation-free $\klin_t=\cond(e^{M(z_t)})$ and the state-dependent contraction rate $\rho_t=\|L^\top x_t\|^2/\|x_t\|^2$.
 
 \subsection{Anchoring the Agent/Drift Split} \label{s:anchor}
-The change $z\to z+c$ with $G_0\to G_0-\sum_ic_iG_i$ leaves every forward prediction unchanged (Proposition~\ref{p:gauge}).
-{\method} anchors this freedom with robot-idle steps $\mathcal{N}$, on which the agent is known not to act, by requiring $z_t\approx0$ there.
-Idle steps are identified from proprioceptive joint speed.
-No action labels are used, but joint speed is a non-visual signal, so the anchored model is not trained from video alone; {\method} without the anchor is.
+Since $z\to z+c$, $G_0\to G_0-\sum_ic_iG_i$ leaves every prediction unchanged (Proposition~\ref{p:gauge}), {\method} requires $z_t\approx0$ on robot-idle steps $\mathcal{N}$, identified from proprioceptive joint speed.
+This uses no action labels, but joint speed is not visual, so only {\method} without the anchor is trained from video alone.
 
 \subsection{Training Objective}
 With a decoder $D$ and the reversed latent action $\zb_t=I_\psi(o_{t+1},o_t)$, {\method} minimises
@@ -355,13 +286,12 @@ With a decoder $D$ and the reversed latent action $\zb_t=I_\psi(o_{t+1},o_t)$, {
 \Omega&=\textstyle\sum_i\|V_i\|_F^2,
 \label{e:loss}
 \end{align}
-where $\mathcal{L}_{\mathrm{rec}}$ reconstructs $o_t$ and $o_{t+1}$ from their lifted states and also includes a latent consistency term $\|K(z_t)s_t-s_{t+1}\|^2$.
-Together, $\ell_{\mathrm{rev}}$ and $\ell_{\mathrm{neg}}$ form the \emph{drift-aware reversal loss}, which decodes the swapped pair with the drift reversed to $-G_0$; sign-reversal losses~\cite{tang2026alam} instead keep the forward drift.
-Proposition~\ref{p:signrev} shows why this distinction matters, and Remark~\ref{r:reduce} that, once $\zb_t=-z_t$, $\ell_{\mathrm{rev}}$ coincides with $\ell_{\mathrm{bwd}}$, so the practical role of the drift-aware loss is to make the IDM antisymmetric on swapped pairs.
-Algorithm~\ref{a:wao} summarises training and the closed-form reverse quantities.
+where $\mathcal{L}_{\mathrm{rec}}$ reconstructs $o_t$, $o_{t+1}$ from their lifted states and includes $\|K(z_t)s_t-s_{t+1}\|^2$.
+$\ell_{\mathrm{rev}}+\ell_{\mathrm{neg}}$, the \emph{drift-aware reversal loss}, decodes the swapped pair under $-G_0$, where sign-reversal losses~\cite{tang2026alam} keep $+G_0$; its practical role is IDM antisymmetry (Remark~\ref{r:reduce}). Algorithm~\ref{a:wao} summarises training and the reverse quantities.
 
 \begin{algorithm}[t]
-\caption{{\method}: training on forward videos and closed-form reverse quantities}\label{a:wao}
+\caption{{\method}: training and reverse quantities}\label{a:wao}
+\footnotesize
 \begin{algorithmic}[1]
 \Require forward videos, idle set $\mathcal{N}$, weights $\lambda_b,\lambda_r,\lambda_a,\lambda_v$
 \Repeat
@@ -389,9 +319,7 @@ Algorithm~\ref{a:wao} summarises training and the closed-form reverse quantities
 \end{algorithm}
 
 \subsection{Transfer between Forward and Reverse Tasks}
-Given insertion data only, {\method} (1) forecasts removal by playing the undo actions of insertion trajectories backward, (2) compares these actions with the latent actions that its IDM extracts from genuine removal clips, and (3) adapts to removal from $k$ episodes by fine-tuning the IDM alone, with $G_0$ and $\phi$ frozen on the assumption that the physics of the scene does not change; Section~\ref{s:results} tests this assumption by also fine-tuning $G_0$.
-Transfer from removal to insertion follows the same three steps.
-When a real reverse motion departs from the derived undo action---for instance, a slice is lifted out of the slot instead of its fall being reversed---the per-transition residual and the undo error mark the steps that forward data alone cannot account for.
+From insertion data alone (and symmetrically from removal), {\method} (1) forecasts removal by playing insertion undo actions backward, (2) compares them with the IDM's actions on real removal clips, and (3) adapts from $k$ episodes by fine-tuning only the IDM, with $G_0$ and $\phi$ frozen since the physics is unchanged (Section~\ref{s:results} also tunes $G_0$); where real reverse motion departs from the derived undo, e.g.\ a slice lifted out, the residual and undo error flag it.
 
 % =====================================================================
 \section{Theoretical Analysis} \label{s:theory}
@@ -407,9 +335,7 @@ For the control-affine system~(\ref{e:cas}) with constant input $u$, the Koopman
 For a differentiable observable $g$, $\mathcal{L}_ug=\frac{d}{dt}g(s(t))=\nabla g\cdot\dot s=\nabla g\cdot f+\sum_iu_i\,\nabla g\cdot g_i$, which is $\mathcal{L}_fg+\sum_iu_i\mathcal{L}_{g_i}g$.
 With $u$ constant over the step, the flow is autonomous and the Koopman semigroup is generated by $\mathcal{L}_u$, giving $\exp(\Delta t\,\mathcal{L}_u)$.
 \end{proof}
-This is a standard property of control-affine systems~\cite{goswami2017global,bruder2021bilinear}; we state it to fix notation.
-Eq.~(\ref{e:koopman}) is the finite-dimensional restriction of this structure to the learned observables $s$, with $G_0$ in the role of $\Delta t\,\mathcal{L}_f$ and $G_i$ in the role of $\Delta t\,\mathcal{L}_{g_i}$.
-The restriction is exact only if the span of the learned observables is invariant under $\mathcal{L}_f$ and every $\mathcal{L}_{g_i}$, and the step operator requires the input to be constant over the 0.5\,s step; both are modelling assumptions.
+This standard property~\cite{goswami2017global,bruder2021bilinear} fixes notation: Eq.~(\ref{e:koopman}) restricts it to the learned observables ($G_0\leftrightarrow\Delta t\,\mathcal{L}_f$, $G_i\leftrightarrow\Delta t\,\mathcal{L}_{g_i}$), exactly only under the modelling assumptions of an invariant span and an input constant over the step.
 
 \begin{proposition}[Exact inverse]
 \label{p:inverse}
@@ -419,8 +345,7 @@ For every $z$, $K(z)$ is invertible with $K(z)^{-1}=\exp(-A(z))$, and $\det K(z)
 $A$ and $-A$ commute, so $\exp(A)\exp(-A)=\exp(A-A)=I$.
 The determinant identity $\det\exp(A)=e^{\mathrm{tr}A}$ follows from the Jordan form of $A$.
 \end{proof}
-Hence the backward step of Eq.~(\ref{e:backward}) is the exact inverse of the learned forward step in the lifted space; it is not a separately learned model and adds no parameters.
-Its accuracy as a predictor of the previous frame is that of the forward model, which we confirm empirically in Section~\ref{s:results}.
+The backward step~(\ref{e:backward}) is thus the exact inverse of the learned step, with no extra parameters, and as accurate as the forward model (Section~\ref{s:results}).
 
 \begin{proposition}[Time-reversal action]
 \label{p:trev}
@@ -432,20 +357,17 @@ No commutativity among $G_0,G_1,\dots,G_m$ is required.
 $\bar K(-z)=\exp(-G_0-\sum_iz_iG_i)=\exp(-A(z))=K(z)^{-1}$ by Proposition~\ref{p:inverse}.
 Only one exponential of a single sum appears, so no product of exponentials of non-commuting matrices is involved.
 \end{proof}
-Proposition~\ref{p:trev} follows algebraically from Definition~\ref{d:trev} and Proposition~\ref{p:inverse}; its content lies in the definition, which takes the reversed world to be the time reversal of the first-order latent dynamics (Section~\ref{s:problem}).
+Its content lies in Definition~\ref{d:trev}, which takes the reversed world as the time reversal of the first-order latent dynamics.
 
 \begin{remark}
-Composition is different.
-$K(z_2)K(z_1)=K(z_1+z_2)$ holds when the generators commute but not in general, by the Baker--Campbell--Hausdorff formula.
-Additive composition of latent actions~\cite{wei2026aclam} is therefore an abelian assumption, whereas the inverse $\zb=-z$ is not.
+Composition differs: by the Baker--Campbell--Hausdorff formula, $K(z_2)K(z_1)=K(z_1+z_2)$ only for commuting generators, so additive composition~\cite{wei2026aclam} is an abelian assumption, whereas $\zb=-z$ is not.
 \end{remark}
 
 \begin{remark}[Reduction of the drift-aware reversal loss]
 \label{r:reduce}
 If $\zb_t=-z_t$, then $e^{-G_0+\sum_i\zb_{t,i}G_i}=K(z_t)^{-1}$ by Proposition~\ref{p:trev}, so $\ell_{\mathrm{rev}}=\ell_{\mathrm{bwd}}$ in Eq.~(\ref{e:loss}).
-The drift-aware reversal loss therefore adds one constraint to exact-inverse reconstruction, antisymmetry of the IDM, $I_\psi(o_{t+1},o_t)=-I_\psi(o_t,o_{t+1})$, and carries no further information about passive dynamics.
-What keeps the drift out of the latent action is the operator form: by Proposition~\ref{p:signrev}, decoding swapped pairs under $+G_0$ is incompatible with any drift, whereas decoding them under $-G_0$ is compatible with every $G_0$.
-The ablation {\method}-SR (Section~\ref{s:setup}) isolates this difference.
+The loss thus adds only IDM antisymmetry, $I_\psi(o_{t+1},o_t)=-I_\psi(o_t,o_{t+1})$, to exact-inverse reconstruction.
+What keeps drift out of the action is the operator form: decoding swapped pairs under $+G_0$ is incompatible with any drift (Proposition~\ref{p:signrev}), under $-G_0$ compatible with every $G_0$; the ablation {\method}-SR isolates this.
 \end{remark}
 
 \begin{proposition}[Undo action]
@@ -466,16 +388,15 @@ Applying both sides to $s$ gives the claim.
 Taking expectations over visited states, the first-order undo error relative to $\|G_0s\|$ is $2\varepsilon$, so $c$ in Eq.~(\ref{e:undo}) minimises it.
 (d) $K(z')s_{t+1}=s_{t+1}+A(z')s_{t+1}+O(\|A(z')\|^2)\|s_{t+1}\|$ and $A(z')s_{t+1}=G_0s_{t+1}+B_tz'$; subtracting $s_t$ gives the expansion, and the rest is linear least squares.
 \end{proof}
-Part~(b) concerns undoing a step from every state, which is what a single state-independent $c$ provides; it does not exclude state-specific undo.
-Part~(d) only requires that the displacement needed at $s_{t+1}$ lie in the at most $m$-dimensional range of $B_t$, a non-generic but state-dependent condition.
-The first-order statements in (c) and (d) need $\|A\|$ to be small; Section~\ref{s:results} reports $\|A(z_t)\|_2$ on our data.
+Part~(b) concerns undo from every state, which a single $c$ provides, and does not exclude state-specific undo; part~(d) only needs the displacement at $s_{t+1}$ to lie in the at most $m$-dimensional range of $B_t$.
+Parts (c) and (d) need small $\|A\|$, which Section~\ref{s:results} checks.
 
 \begin{remark}[Reference value for the drift residual]
 \label{r:eps}
 For a state $s=[x;1]$, the vectors $G_is$ span a subspace $U_s$ of dimension at most $m$ within the $d$ coordinates of $x$.
 If $G_0s$ were isotropic given $U_s$, with $\mathbb{E}[G_0s\,(G_0s)^\top\mid U_s]=\sigma^2I$, even a state-dependent $c$ would leave $\mathbb{E}\|P_{U_s^\perp}G_0s\|^2\ge(1-m/d)\,\mathbb{E}\|G_0s\|^2$, i.e.\ $\varepsilon\ge(1-m/d)^{1/2}\approx0.87$ for $m=16$ and $d=64$; a single $c$ shared across states leaves more.
-Moreover, the dissipative block contributes $x^\top(-LL^\top)x=-\|L^\top x\|^2$ along $x$, which the skew blocks cannot produce since $x^\top(W-W^\top)x=0$; only the penalised symmetric blocks and the translation columns can.
-A residual near 1 is therefore what the parameterisation leads one to expect when actions and drift are unrelated: it shows that the learned actions cannot cancel the learned drift, but by itself it does not show that a particular event, such as a drop, is irreversible.
+Moreover, the dissipative block contributes $x^\top(-LL^\top)x=-\|L^\top x\|^2$ along $x$, which skew blocks cannot produce ($x^\top(W-W^\top)x=0$); only the penalised symmetric blocks and translations can.
+A residual near 1 is thus expected when actions and drift are unrelated; it shows that the actions cannot cancel the drift, not that a given event, such as a drop, is irreversible.
 \end{remark}
 
 \begin{proposition}[Non-identifiability of the agent/drift split]
@@ -486,10 +407,7 @@ The split between agent effects and drift is therefore not identifiable from act
 \begin{proof}
 $G_0-\sum_ic_iG_i+\sum_i(z_i+c_i)G_i=G_0+\sum_iz_iG_i$, so $A(z_t)$ and $K(z_t)$ are the same for every transition, and so is every prediction made from them.
 \end{proof}
-Two consequences follow.
-The drift residual $\varepsilon$ and the per-transition residuals are invariant under this transformation, because the minimisation in Eq.~(\ref{e:undo}) absorbs any shift of $G_0$ within $\mathcal{G}$.
-The reversed world of Definition~\ref{d:trev} is not: its drift $-G_0$ changes with $c$, so how much of a reversed motion is attributed to the agent depends on where the zero action is fixed.
-Video alone cannot fix where the zero action lies, so {\method} anchors it with a few transitions in which the agent is known to be idle (Section~\ref{s:anchor}); a few labeled actions would serve the same purpose.
+$\varepsilon$ and $\varepsilon_t$ are invariant, since Eq.~(\ref{e:undo}) absorbs any shift of $G_0$ within $\mathcal{G}$, but the reversed world is not ($-G_0$ changes with $c$), so the zero action must be fixed by idle transitions (Section~\ref{s:anchor}) or a few labels.
 
 \begin{proposition}[Sign reversal forces zero drift]
 \label{p:signrev}
@@ -500,10 +418,8 @@ If this is consistent with the forward step $s_{t+1}=K(z)s_t$ on a set of states
 Consistency on a spanning set gives $K(-z)K(z)=I$, i.e.\ $\exp(G_0-\sum_iz_iG_i)=\exp(-G_0-\sum_iz_iG_i)$.
 By injectivity of the exponential on the strip, $G_0-\sum_iz_iG_i=-G_0-\sum_iz_iG_i$, hence $G_0=0$.
 \end{proof}
-A sign-reversal model that fits forward and reversed pairs therefore has no room for drift, and all passive dynamics must be carried by the latent action.
-This is the drift absorption that the drift-aware reversal loss avoids, since by Proposition~\ref{p:trev} it is consistent for any $G_0$.
-Proposition~\ref{p:signrev} concerns sign reversal in Koopman form.
-It does not cover a nonlinear forward model, in which a state-dependent latent action can absorb drift without contradiction; the MLP sign-reversal baseline of Section~\ref{s:setup} is of that kind, and the Koopman ablation {\method}-SR is the model to which the proposition applies.
+An exactly consistent Koopman sign-reversal model thus leaves all passive dynamics to the latent action, the drift absorption that the drift-aware loss avoids (it is consistent for any $G_0$ by Proposition~\ref{p:trev}).
+The result does not cover nonlinear forward models, where a state-dependent action can absorb drift without contradiction: it applies to {\method}-SR, not to the MLP sign-reversal baseline.
 
 \begin{proposition}[Reversibility score]
 \label{p:kappa}
@@ -519,8 +435,7 @@ The logarithmic norm in the spectral norm is $\mu(A)=\lambda_{\max}(A_s)$, and $
 Applying the same bound to $-A$ gives $\sigma_{\min}(e^A)=1/\|e^{-A}\|_2\ge e^{-\mu(-A)}=e^{\lambda_{\min}(A_s)}$.
 If $A^\top=-A$, then $(e^A)^\top e^A=e^{-A}e^A=I$.
 \end{proof}
-In {\method}, $A_s$ collects the dissipative drift $-LL^\top$, the symmetric action blocks and the translation columns.
-A large $\kappa_t$ therefore signals a step whose operator is dissipative, strongly non-rigid or translating, which is where inverting the step amplifies error.
+In {\method}, $A_s$ collects $-LL^\top$, the symmetric action blocks and the translations, so a large $\kappa_t$ marks a dissipative, non-rigid or translating step, where inversion amplifies error.
 
 \begin{corollary}[What $\kappa_t$ measures]
 \label{c:kappa}
@@ -533,82 +448,69 @@ In particular a pure translation ($M=0$, $b\neq0$) has $\cond(e^A)>1$, so transl
 (ii) For $k\ge1$, $A^k=\begin{bmatrix}M^k&M^{k-1}b\\0&0\end{bmatrix}$, and summing the exponential series gives the stated form.
 For $M=0$, $e^A=\begin{bmatrix}I&b\\0&1\end{bmatrix}$ has determinant 1 and a last column of norm $(1+\|b\|^2)^{1/2}>1$, so it is not orthogonal; its singular values multiply to 1 and are not all 1, hence $\sigma_{\max}>1>\sigma_{\min}$.
 \end{proof}
-By Corollary~\ref{c:kappa}(i), $\kappa_t$ can flag a drop only through what the IDM writes into $z_t$: the release motion itself, or drift absorbed into the action.
-The contraction rate $\rho_t$ depends on the state and does not have this limitation, although Section~\ref{s:toy} shows that the learned $L$ need not place the contraction where the scene actually settles.
+Hence $\kappa_t$ can flag a drop only through what the IDM writes into $z_t$, the release motion or absorbed drift; the state-dependent $\rho_t$ avoids this, though the learned $L$ need not contract where the scene settles (Section~\ref{s:toy}).
 
 % =====================================================================
 \section{Experimental Setup} \label{s:setup}
 
-\begin{figure*}[t]
+\begin{figure}[t]
 	\centering
-	\includegraphics[width=\textwidth]{figs/fig_dataset.jpg}
-	\caption{Top-camera views of the ALOHA toaster task. Upper row: insertion, where the robot takes the two foam bread slices from a plate one after the other and lets each fall into a toaster slot. Lower row: removal, where it pulls the slices out and returns them to the plate. The two tasks traverse the same scene states in reverse order.}
+	\includegraphics[width=0.9\columnwidth]{figs/fig_dataset.jpg}
+	\caption{ALOHA toaster task, top camera. Top: insertion (slices dropped into the slots). Bottom: removal (slices returned to the plate).}
 	\label{f:dataset}
-\end{figure*}
+\end{figure}
 
 \subsection{Data}
-The dataset consists of 100 real bimanual recordings collected with ALOHA~\cite{zhao2023aloha}, a platform with two 6-DoF arms and parallel grippers that logs 14-D joint-space actions at 50\,Hz and three RGB streams (one overhead, one per wrist) at $480\times848$ (Fig.~\ref{f:dataset}).
-Every recording is 25\,s long, i.e.\ 1,250 control steps.
-The 50 \textbf{insertion} and 50 \textbf{removal} recordings visit three shared scene states in opposite orders: both slices on the plate, one slice in the toaster, and both slices in the toaster.
-One additional insertion recording with no joint motion was excluded.
-Both regimes that {\method} distinguishes occur in this task: moving a grasped slice is quasi-static and almost reversible, whereas the gravity-driven drop into a slot cannot be undone by reversing the motion.
-
-We compute features at 10\,Hz and let one model step cover 0.5\,s, i.e.\ 50 steps per recording.
-All five phase offsets of a recording are used for training, and offset 0 for evaluation.
-For each direction we run 5-fold cross-validation with folds formed from whole recordings.
-Training never sees joint actions; the sole exception is proprioceptive joint speed, from which the slowest 15\% of steps define the anchor set $\mathcal{N}$.
-Gripper positions serve only to locate releases during evaluation; a release is counted when a gripper opens beyond 0.9 after holding an object ($0.05<g<0.9$) for at least 1\,s, a rule that yields exactly two releases in 41 of 50 insertion and 49 of 50 removal recordings.
-Detection uses every held-out recording with all the releases the rule finds, which gives 93 post-release steps against 810 carrying steps for insertion and 103 against 898 for removal, pooled over the five folds.
-The drop is triggered by the agent opening the gripper and completes within a fraction of one 0.5\,s step; apart from such events the scene is static unless the robot moves it.
+ALOHA~\cite{zhao2023aloha} has two 6-DoF arms with parallel grippers, logs 14-D joint actions at 50\,Hz and three $480\times848$ RGB streams (overhead, two wrists).
+We use 50 \textbf{insertion} and 50 \textbf{removal} recordings of 25\,s (Fig.~\ref{f:dataset}; one motionless insertion excluded), visiting three shared states in opposite order: both slices on the plate, one in the toaster, both in the toaster.
+Carrying a grasped slice is quasi-static and almost reversible; the drop into a slot, triggered by opening the gripper and complete within a fraction of a 0.5\,s step, is not; otherwise the scene is static unless the robot moves it.
+Features are computed at 10\,Hz and one step covers 0.5\,s (50 per recording), with all five phase offsets for training and offset 0 for evaluation, in 5-fold cross-validation over whole recordings.
+Training never sees joint actions; joint speed defines the anchor set $\mathcal{N}$ (slowest 15\% of steps).
+Gripper positions only locate releases for evaluation: an opening beyond 0.9 after holding ($0.05<g<0.9$) for at least 1\,s, which yields exactly two releases in 41 of 50 insertion and 49 of 50 removal recordings, giving 93 post-release vs.\ 810 carrying steps (insertion) and 103 vs.\ 898 (removal).
 
 \subsection{Representation and Training}
-Frames from the top camera are resized to $224\times392$ and encoded by a frozen DINOv2 ViT-S/14~\cite{oquab2024dinov2}.
-We concatenate the CLS token (384-D) with a $2\times4$ average-pooled patch grid (3,072-D), standardise, and reduce to 128 dimensions by PCA fitted on training episodes.
-Throughout, $o_t$ denotes these 128-D features: the decoder reconstructs features rather than pixels, and all errors are measured in this feature space.
-A feature check confirms that this representation encodes the scene state: a linear probe decodes the three scene stages with 97.5\% balanced accuracy (chance 33.3\%).
-The head $\phi$ and decoder are two-layer MLPs with 256 hidden units, $d=64$ and $m=16$.
-$K(z)$ is computed with a batched matrix exponential based on scaling and squaring~\cite{higham2005scaling}.
-Encoder, decoder and training budget are identical across models: 4,000 Adam updates with batches of 512, learning rate $10^{-3}$, $\lambda_b=\lambda_r=\lambda_a=1$ and $\lambda_v=10^{-3}$.
-Each run, including all diagnostics, takes about four minutes on one A100 GPU.
-Every model is trained with three seeds per fold, so each robot-data value is a mean over 15 runs (5 folds $\times$ 3 seeds) per model and direction; rerunning seed 0 reproduced the earlier single-seed results exactly.
+Top-camera frames, resized to $224\times392$, are encoded by a frozen DINOv2 ViT-S/14~\cite{oquab2024dinov2}; the CLS token (384-D) and a $2\times4$ pooled patch grid (3,072-D) are standardised and reduced by PCA, fitted on training episodes, to the 128-D features $o_t$ in which all reconstruction and errors are measured.
+A linear probe decodes the three scene stages from them with 97.5\% balanced accuracy (chance 33.3\%).
+The head $\phi$ and decoder are two-layer MLPs with 256 hidden units, $d=64$, $m=16$, and $K(z)$ uses a batched scaling-and-squaring exponential~\cite{higham2005scaling}.
+All models share encoder, decoder and budget: 4,000 Adam updates, batch 512, learning rate $10^{-3}$, $\lambda_b=\lambda_r=\lambda_a=1$, $\lambda_v=10^{-3}$; a run takes about four minutes on one A100.
+Each model is trained with three seeds per fold, so every robot-data value is a mean over 15 runs per model and direction; rerunning seed 0 reproduced the earlier single-seed results exactly.
 
 \subsection{Baselines and Ablations}
-\textbf{LAM}~\cite{schmidt2024lapo} uses an MLP forward model and a separate MLP backward model trained on time-reversed clips; its reverse action is the IDM applied to the swapped pair.
-\textbf{Sign-reversal LAM}~\cite{tang2026alam} uses one shared MLP forward model, $\zb=-z$, and decodes swapped pairs with the forward model.
-\textbf{{\method} w/o anchor} drops the anchor term.
-Three Koopman ablations isolate the operator form, the reversal loss and the drift: \textbf{{\method}-SR} decodes the swapped pair under $+G_0$ instead of $-G_0$ and is the model of Proposition~\ref{p:signrev}; \textbf{{\method} w/o reversal} sets $\lambda_r=0$; and \textbf{{\method}, $G_0=0$} removes the drift generator.
-The \textbf{two-direction reference} is {\method} trained on both directions.
-It sees the test task during training and, in the rollout and alignment metrics, uses the IDM's actions on the test recording itself rather than derived reverse actions, so it is a reference, not an upper bound.
+\textbf{LAM}~\cite{schmidt2024lapo} has MLP forward and backward models, the latter trained on time-reversed clips; its reverse action is the IDM on the swapped pair.
+\textbf{Sign-reversal LAM}~\cite{tang2026alam} decodes swapped pairs with one shared MLP forward model and $\zb=-z$.
+\textbf{{\method} w/o anchor} drops the anchor.
+Three Koopman ablations isolate the drift sign, the reversal loss and the drift: \textbf{{\method}-SR} decodes swapped pairs under $+G_0$ (the model of Proposition~\ref{p:signrev}), \textbf{{\method} w/o reversal} sets $\lambda_r=0$, and \textbf{{\method}, $G_0=0$} has no drift generator.
+The \textbf{two-direction reference} is {\method} trained on both directions; it sees the test task and, for rollouts and alignment, uses the IDM's actions on the test recording itself, so it is a reference, not an upper bound.
 
 \subsection{Evaluation Protocol}
-Models fitted to insertion are evaluated on removal, written I$\to$R; the opposite assignment is written R$\to$I.
-Errors are relative to predicting no change, $\|\hat o-o\|^2/\|o_{\mathrm{prev}}-o\|^2$, so 1.0 means no better than copying the current frame.
+Models trained on insertion are tested on removal (I$\to$R), and vice versa (R$\to$I).
+Errors are relative to predicting no change, $\|\hat o-o\|^2/\|o_{\mathrm{prev}}-o\|^2$, so 1.0 equals copying the current frame.
 \begin{enumerate}
-	\item \textbf{Forward and backward error}, measured on held-out recordings of the direction used for training. Because the IDM sees $o_{t+1}$, these errors measure reconstruction through the latent-action bottleneck rather than open-loop prediction.
-	\item \textbf{End-distance ratio}: starting from a test recording of the opposite task, we roll out the reverse actions derived from a held-out training recording and divide the final distance to the target-stage prototype by the initial one, with distances between decoded features; a ratio below 1 indicates that the rollout moved toward the target. We also report \textbf{stage reach}, the fraction of rollouts that end nearer the target stage than the start stage. A dissipative drift contracts any rollout, so a ratio below 1 can arise without any reversal; as null references we roll out from the same start with zero actions, with random actions drawn from a Gaussian fitted to the training actions, and with the forward actions in their original order.
-	\item \textbf{Action alignment}: the cosine between the derived reverse actions and the latent actions the IDM assigns to real reverse recordings, after alignment with dynamic time warping. Because time warping maximises similarity, we also align the derived actions with a time-permuted copy of the real reverse actions.
-	\item \textbf{Joint-probe error}: a linear probe from $z$ to 14-D joint deltas, fitted on the training direction and scored on time-warped real reverse actions; as a reference we score negated, time-reversed joint deltas.
-	\item \textbf{Reversibility AUROC} of $\kappa_t$ for separating the 0.5\,s after each release from grasped carrying, on held-out recordings of the training direction: for I$\to$R these are insertions, where releases drop slices into the slots, and for R$\to$I removals, where releases put slices on the plate. For LAM baselines we use the condition number of the forward-model Jacobian, which, unlike $\kappa_t$, depends on the state. We also score $\klin_t$, $\rho_t$, $\varepsilon_t$ and four simple detectors ($\|z_t\|$, the feature change $\|o_{t+1}-o_t\|$, arm joint speed and a gripper-opening indicator), against all carrying steps and against matched carrying steps, the three nearest to each post-release step in arm joint speed (the agent's motion) or in feature change (the total motion).
-	\item \textbf{Few-shot error}: forward error on the opposite task once the IDM alone, or for Koopman models the IDM and $G_0$, has been fine-tuned on $k\in\{0,1,3,5\}$ recordings.
-	\item \textbf{Drift residual} $\varepsilon$ of Eq.~(\ref{e:residual}), with the analytic reference of Remark~\ref{r:eps} and a random drift generator of the same structure and norm, and the per-transition residual $\varepsilon_t$.
-	\item \textbf{Undo success}: the fraction of post-release and carrying transitions for which the state-specific undo of Eq.~(\ref{e:undoss}) returns to within half a step, $\|D(K(\zss_t)s_{t+1})-o_t\|<0.5\,\|o_{t+1}-o_t\|$, in one step and with a three-step plan.
-	\item \textbf{Drift absorption}: the AUROC of a logistic probe from $z_t$ to the post-release label, fitted on training recordings.
+	\item \textbf{Forward/backward error} on held-out training-direction recordings; the IDM sees $o_{t+1}$, so they measure reconstruction, not open-loop prediction.
+	\item \textbf{End-distance ratio}: reverse actions derived from a held-out training recording are rolled out from an opposite-task test recording; final over initial distance to the target-stage prototype in decoded features (below 1: toward the target). \textbf{Stage reach}: fraction of rollouts ending nearer the target than the start stage. Null rollouts use zero, random (Gaussian fitted to training actions) and unreversed forward actions, since dissipative drift contracts any rollout.
+	\item \textbf{Action alignment}: cosine of derived and real reverse actions (IDM on real recordings) after time warping, with a time-permuted reference.
+	\item \textbf{Joint-probe error}: a linear probe from $z$ to 14-D joint deltas on warped real reverse actions, against negated, time-reversed deltas.
+	\item \textbf{Reversibility AUROC} of $\kappa_t$ (LAMs: state-dependent forward-model Jacobian condition number) for the 0.5\,s after each release vs.\ carrying, on held-out training-direction recordings (drops into slots for I$\to$R, onto the plate for R$\to$I); also for $\klin_t$, $\rho_t$, $\varepsilon_t$, $\|z_t\|$, $\|o_{t+1}-o_t\|$, arm speed and gripper opening, against all carrying steps or the three nearest each post-release step in arm speed (agent motion) or feature change (total motion).
+	\item \textbf{Few-shot error}: opposite-task error after fine-tuning the IDM (or IDM and $G_0$) on $k\in\{0,1,3,5\}$ recordings.
+	\item \textbf{Drift residual} $\varepsilon$, against Remark~\ref{r:eps} and a random $G_0$ of equal structure and norm, and $\varepsilon_t$.
+	\item \textbf{Undo success}: fraction of post-release and carrying transitions that undo~(\ref{e:undoss}) returns within half a step, $\|D(K(\zss_t)s_{t+1})-o_t\|<0.5\,\|o_{t+1}-o_t\|$, in one or three steps.
+	\item \textbf{Drift absorption}: AUROC of a logistic probe from $z_t$ to the post-release label.
 \end{enumerate}
-All models of one direction share the test folds and seeds, so we compare them run by run (15 pairs of fold and seed) with paired $t$-tests and report how many runs favour each model; Wilcoxon signed-rank tests, in \texttt{results/paired\_stats.json}, agree with the $t$-tests at the 0.05 level in all but one comparison.
+Models are compared over 15 paired runs (shared folds and seeds) with paired $t$-tests and win counts; Wilcoxon tests agree at the 0.05 level in all but one comparison.
 
 % =====================================================================
 \section{Results} \label{s:results}
 
 \begin{figure*}[t]
 	\centering
-	\includegraphics[width=\textwidth]{figs/fig_compare_bars.pdf}
-	\caption{Main metrics as mean $\pm$ one standard deviation over 15 runs (5 folds $\times$ 3 seeds), with individual runs shown as dots. Dotted reference lines indicate chance level (AUROC 0.5), no movement toward the target (ratio 1.0) and the no-change predictor (error 1.0); the dashed line marks the two-direction reference, which is also trained on the test direction and is not an upper bound.}
+	\includegraphics[width=0.75\textwidth]{figs/fig_compare_bars.pdf}
+	\caption{Main metrics, mean $\pm$ s.d.\ over 15 runs (dots). Dotted: chance or no-change level; dashed: two-direction reference.}
 	\label{f:bars}
 \end{figure*}
 
 \begin{table*}
 	\centering
-	\caption{Cross-validated results (mean $\pm$ standard deviation over 15 runs: 5 folds $\times$ 3 seeds). I$\to$R denotes training on insertion and testing on removal, R$\to$I the opposite. Errors are normalised by the no-change predictor. For forward error, backward error, reversibility AUROC and drift residual, the direction names the training task, evaluated on its held-out recordings. Bold marks the best non-reference entry in each row; the two-direction reference is trained on both directions and is worse than other models on action alignment, joint-probe error and joint-probe error, so it is not an upper bound.}
+	\caption{Cross-validated results, mean $\pm$ s.d.\ over 15 runs (5 folds $\times$ 3 seeds). Bold: best non-reference model.}
 	\label{t:main}
 	\footnotesize
 	\setlength{\tabcolsep}{3.2pt}
@@ -638,10 +540,9 @@ All models of one direction share the test folds and seeds, so we compare them r
 	\end{tabular}
 \end{table*}
 
-
 \begin{table*}
 	\centering
-	\caption{Paired comparison of {\method} with each baseline and Koopman ablation over the 15 runs (5 folds $\times$ 3 seeds) of Tables~\ref{t:main} and~\ref{t:ablation}. $\Delta$: mean $\pm$ standard deviation of {\method} minus the other model; wins: runs in which {\method} is better; $p$: paired $t$-test.}
+	\caption{Paired comparison over 15 runs. $\Delta$: {\method} minus the other model (mean $\pm$ s.d.); wins: runs in which {\method} is better; $p$: paired $t$-test.}
 	\label{t:paired}
 	\footnotesize
 	\setlength{\tabcolsep}{3.5pt}
@@ -649,70 +550,55 @@ All models of one direction share the test folds and seeds, so we compare them r
 		\toprule
 		& & \multicolumn{3}{c}{I$\to$R} & \multicolumn{3}{c}{R$\to$I} \\
 		\cmidrule(r){3-5} \cmidrule(l){6-8}
-		Baseline & Metric & $\Delta$ & wins & $p$ & $\Delta$ & wins & $p$ \\
+		Compared with & Metric & $\Delta$ & wins & $p$ & $\Delta$ & wins & $p$ \\
 		\midrule
-		\multirow{4}{*}{LAM} & End-distance ratio $\downarrow$ & -0.037$\pm$0.116 & 9/15 & 0.245 & -0.046$\pm$0.114 & 11/15 & 0.140 \\
+		\multirow{3}{*}{LAM} & End-distance ratio $\downarrow$ & -0.037$\pm$0.116 & 9/15 & 0.245 & -0.046$\pm$0.114 & 11/15 & 0.140 \\
 		 & Reversibility AUROC $\uparrow$ & +0.024$\pm$0.040 & 10/15 & 0.038 & +0.024$\pm$0.101 & 9/15 & 0.367 \\
 		 & Few-shot error, $k=5$ $\downarrow$ & -0.047$\pm$0.031 & 14/15 & $<$0.001 & -0.054$\pm$0.024 & 15/15 & $<$0.001 \\
-		 & Action alignment $\uparrow$ & -0.046$\pm$0.014 & 0/15 & $<$0.001 & -0.092$\pm$0.015 & 0/15 & $<$0.001 \\
 		\midrule
-		\multirow{4}{*}{Sign-rev. LAM} & End-distance ratio $\downarrow$ & -0.829$\pm$0.293 & 15/15 & $<$0.001 & -1.294$\pm$0.493 & 15/15 & $<$0.001 \\
+		\multirow{3}{*}{Sign-rev. LAM} & End-distance ratio $\downarrow$ & -0.829$\pm$0.293 & 15/15 & $<$0.001 & -1.294$\pm$0.493 & 15/15 & $<$0.001 \\
 		 & Reversibility AUROC $\uparrow$ & +0.128$\pm$0.081 & 15/15 & $<$0.001 & +0.233$\pm$0.075 & 15/15 & $<$0.001 \\
 		 & Few-shot error, $k=5$ $\downarrow$ & -0.022$\pm$0.030 & 12/15 & 0.014 & -0.025$\pm$0.021 & 13/15 & $<$0.001 \\
-		 & Action alignment $\uparrow$ & -0.007$\pm$0.008 & 2/15 & 0.003 & -0.007$\pm$0.010 & 4/15 & 0.010 \\
 		\midrule
-		\multirow{4}{*}{{\method} w/o anchor} & End-distance ratio $\downarrow$ & +0.011$\pm$0.072 & 7/15 & 0.571 & +0.045$\pm$0.078 & 4/15 & 0.041 \\
+		\multirow{3}{*}{{\method} w/o anchor} & End-distance ratio $\downarrow$ & +0.011$\pm$0.072 & 7/15 & 0.571 & +0.045$\pm$0.078 & 4/15 & 0.041 \\
 		 & Reversibility AUROC $\uparrow$ & +0.016$\pm$0.012 & 14/15 & $<$0.001 & +0.046$\pm$0.024 & 15/15 & $<$0.001 \\
 		 & Few-shot error, $k=5$ $\downarrow$ & +0.028$\pm$0.011 & 0/15 & $<$0.001 & +0.011$\pm$0.014 & 4/15 & 0.007 \\
-		 & Action alignment $\uparrow$ & +0.016$\pm$0.007 & 15/15 & $<$0.001 & +0.013$\pm$0.005 & 15/15 & $<$0.001 \\
 		\midrule
-		\multirow{4}{*}{{\method}-SR ($+G_0$)} & End-distance ratio $\downarrow$ & +0.064$\pm$0.062 & 1/15 & 0.001 & +0.083$\pm$0.065 & 1/15 & $<$0.001 \\
+		\multirow{3}{*}{{\method}-SR ($+G_0$)} & End-distance ratio $\downarrow$ & +0.064$\pm$0.062 & 1/15 & 0.001 & +0.083$\pm$0.065 & 1/15 & $<$0.001 \\
 		 & Reversibility AUROC $\uparrow$ & -0.000$\pm$0.012 & 8/15 & 0.974 & +0.001$\pm$0.015 & 6/15 & 0.894 \\
 		 & Few-shot error, $k=5$ $\downarrow$ & +0.003$\pm$0.018 & 8/15 & 0.465 & +0.003$\pm$0.012 & 7/15 & 0.342 \\
-		 & Action alignment $\uparrow$ & -0.007$\pm$0.008 & 5/15 & 0.006 & -0.005$\pm$0.004 & 2/15 & $<$0.001 \\
 		\midrule
-		\multirow{4}{*}{{\method} w/o reversal} & End-distance ratio $\downarrow$ & -0.092$\pm$0.066 & 14/15 & $<$0.001 & -0.156$\pm$0.089 & 15/15 & $<$0.001 \\
+		\multirow{3}{*}{{\method} w/o reversal} & End-distance ratio $\downarrow$ & -0.092$\pm$0.066 & 14/15 & $<$0.001 & -0.156$\pm$0.089 & 15/15 & $<$0.001 \\
 		 & Reversibility AUROC $\uparrow$ & +0.004$\pm$0.019 & 9/15 & 0.397 & +0.015$\pm$0.027 & 12/15 & 0.049 \\
 		 & Few-shot error, $k=5$ $\downarrow$ & +0.009$\pm$0.032 & 6/15 & 0.278 & -0.003$\pm$0.015 & 9/15 & 0.406 \\
-		 & Action alignment $\uparrow$ & +0.021$\pm$0.014 & 14/15 & $<$0.001 & +0.017$\pm$0.012 & 15/15 & $<$0.001 \\
 		\midrule
-		\multirow{4}{*}{{\method}, $G_0=0$} & End-distance ratio $\downarrow$ & -0.061$\pm$0.073 & 12/15 & 0.006 & -0.033$\pm$0.052 & 10/15 & 0.028 \\
+		\multirow{3}{*}{{\method}, $G_0=0$} & End-distance ratio $\downarrow$ & -0.061$\pm$0.073 & 12/15 & 0.006 & -0.033$\pm$0.052 & 10/15 & 0.028 \\
 		 & Reversibility AUROC $\uparrow$ & +0.002$\pm$0.013 & 7/15 & 0.510 & -0.001$\pm$0.013 & 8/15 & 0.704 \\
 		 & Few-shot error, $k=5$ $\downarrow$ & +0.004$\pm$0.017 & 7/15 & 0.382 & +0.002$\pm$0.014 & 8/15 & 0.665 \\
-		 & Action alignment $\uparrow$ & -0.009$\pm$0.005 & 0/15 & $<$0.001 & -0.006$\pm$0.005 & 3/15 & $<$0.001 \\
 		\bottomrule
 	\end{tabular}
 \end{table*}
 
-Fig.~\ref{f:bars} and Table~\ref{t:main} report the cross-validation outcome, and Table~\ref{t:paired} compares {\method} with the baselines and ablations run by run.
-One-step prediction is of similar quality for every model (forward error 0.218--0.237), and the backward error of {\method}, computed with the exact inverse of Proposition~\ref{p:inverse}, is essentially the same as its forward error, as the theory implies.
-The exact inverse does not make the backward step more accurate, however: the plain LAM's separately trained backward model reaches 0.225 and 0.229 against 0.232 and 0.235 for {\method}, and {\method}'s forward error is the highest of the four models in all 15 runs of both directions, by 0.006--0.011 on average; the value of the exact inverse is that it costs no parameters.
-The differences therefore lie in the reverse direction.
+Table~\ref{t:main} and Fig.~\ref{f:bars} give the results, Table~\ref{t:paired} the paired tests.
+One-step prediction is similar for all models (forward error 0.218--0.237), and {\method}'s exact-inverse backward error matches its forward error (Proposition~\ref{p:inverse}), but is not more accurate: the LAM's separate backward model reaches 0.225 and 0.229 against 0.232 and 0.235, and {\method}'s forward error is the highest of the four in all 15 runs, by 0.006--0.011; the inverse's value is that it costs no parameters.
+No model reproduces the real reverse joint motion: all joint-probe errors exceed 1.0, though all beat negated, time-reversed joint deltas (1.58 and 1.53), so removal is not insertion run backward.
 
 \subsection{Sign Reversal in an MLP Model Diverges}
-Only the sign-reversal LAM produces diverging reverse rollouts: they finish 1.58 and 2.13 times farther from the target than where they began, above 1.22 in every run, and its reversibility AUROC drops to 0.62 and 0.40, below chance in 13 of the 15 R$\to$I runs.
-Every Koopman model trained with the reversal loss keeps the end-distance ratio under 1.0 in every run and attains a mean AUROC between 0.59 and 0.75.
-The plain LAM, which has no reversal constraint at all, is about as stable (0.79 and 0.88; the paired difference to {\method} is not significant in either direction, Table~\ref{t:paired}).
-The result therefore shows that sign reversal in an MLP model fails on this task; it does not by itself show that the drift-aware loss is what prevents the failure.
-Proposition~\ref{p:signrev} predicts the failure for sign reversal in Koopman form, which the MLP baseline is not, and its divergence may also come from evaluating the MLP forward model at $-z$, outside the actions seen in training.
+Only the sign-reversal LAM diverges, ending 1.58 and 2.13 times farther from the target than it started (above 1.22 in every run), with AUROC 0.62 and 0.40 (below chance in 13 of 15 R$\to$I runs).
+Every Koopman model with the reversal loss stays below 1.0 in every run (mean AUROC 0.59--0.75), and the plain LAM is about as stable (0.79, 0.88; not significantly different).
+Proposition~\ref{p:signrev} does not cover this MLP failure, which may also come from evaluating the MLP at $-z$, outside the training actions.
 
-The Koopman ablations of Table~\ref{t:ablation} separate these explanations, and they point away from the sign of the drift.
-{\method}-SR, which decodes the swapped pair under $+G_0$ and is the Koopman sign-reversal model of Proposition~\ref{p:signrev}, does not diverge: its rollouts are the most stable of all non-reference models (0.69 and 0.76), better than {\method} in 14 of 15 runs in each direction ($p\le0.001$), and its AUROC and transfer are indistinguishable from {\method} ($p>0.3$).
-Its drift residual (0.98 and 0.96) shows that it keeps a drift generator, so the zero drift that Proposition~\ref{p:signrev} requires for exact consistency is not reached; with a backward error of 0.23, neither model is exactly consistent, and the proposition's premise does not hold for the trained models.
-What matters is the reversal loss in Koopman form: without it, the end-distance ratio rises to 0.85 and 0.99, worse than {\method} in 14 and 15 of 15 runs ($p<0.001$), and above 1.0 in 7 of the 15 R$\to$I runs.
-Removing the drift generator also raises it, to 0.82 and 0.87 ($p=0.006$ and $0.028$).
-The divergence of the MLP sign-reversal model therefore most likely comes from the MLP forward model evaluated at $-z$, not from the sign of the drift.
-The absorption probe does not separate the Koopman models either: a release is decodable from $z_t$ with AUROC 0.94--0.95 for every one of them, {\method}-SR included, about as well as from the feature change itself (0.95), and only the plain LAM is somewhat lower (0.91 and 0.89); on the robot data, every model writes the drop into its action.
+The Koopman ablations (Table~\ref{t:ablation}) point away from the drift sign.
+{\method}-SR, the model of Proposition~\ref{p:signrev}, does not diverge: it is the most stable non-reference model (0.69, 0.76), better than {\method} in 14 of 15 runs per direction ($p\le0.001$), with equal AUROC and transfer ($p>0.3$); it keeps a drift generator (residual 0.98, 0.96), and with backward errors of 0.23 neither model is exactly consistent, so the proposition's premise does not hold.
+What matters is the reversal loss: without it the ratio rises to 0.85 and 0.99 (worse in 14 and 15 of 15 runs, $p<0.001$; above 1.0 in 7 R$\to$I runs), and without a drift generator to 0.82 and 0.87 ($p=0.006$, $0.028$); the MLP's divergence most likely comes from evaluating it at $-z$.
+Absorption does not separate the models: a release is decodable from $z_t$ with AUROC 0.94--0.95 for every Koopman model, as from the feature change (0.95), and 0.91 and 0.89 for the LAM.
 
-A ratio below 1 is evidence of reversal only if it is clearly below that of the null rollouts (Table~\ref{t:undo}).
-Without any action, the rollouts of {\method} already end at 0.87 and 0.90, and those of the model with $G_0=0$ at 0.86 and 0.90, where a zero action leaves the lifted state unchanged; this part of the ratio therefore comes from decoding, not from drift.
-The derived reverse actions of {\method} lower the ratio below this null in 14 and 12 of 15 runs, whereas random actions (1.50 and 1.71) and the unreversed forward actions (1.05 and 1.18) move the rollout away from the target, so the reverse actions carry direction, if modestly.
-Their alignment with the real reverse actions (0.133 and 0.145) is small but clearly above the time-permuted reference ($-0.004$ and $-0.003$).
-In the controlled study of Section~\ref{s:toy}, where the drift is known, the Koopman sign-reversal model absorbs more of the passive motion than {\method} (0.81 against 0.70) and its reverse action $-z$ undoes reversible steps worse (1.22 against 0.76 step lengths), as Proposition~\ref{p:signrev} predicts; on the robot data, where the drop is brief and agent-triggered, this advantage does not appear.
+Among null rollouts (Table~\ref{t:undo}), zero actions already give 0.87 and 0.90 (0.86, 0.90 with $G_0=0$, whose state stays fixed), from decoding, not drift; {\method}'s reverse actions beat this in 14 and 12 of 15 runs while random and unreversed forward actions move away, and they align with real reverse actions above a time-permuted reference: they carry direction, if modestly.
+In the controlled study (Section~\ref{s:toy}), Koopman sign reversal absorbs more drift (0.81 vs.\ 0.70) and undoes reversible steps worse (1.22 vs.\ 0.76 step lengths), as Proposition~\ref{p:signrev} predicts; with the brief, agent-triggered drop on the robot, this advantage does not appear.
 
 \begin{table*}
 	\centering
-	\caption{Koopman ablations on the robot data, mean $\pm$ standard deviation over 15 runs (5 folds $\times$ 3 seeds). Rows for {\method}, {\method} w/o anchor, LAM and sign-rev.\ LAM repeat Table~\ref{t:main}. Absorption: AUROC of a logistic probe from $z_t$ to the post-release label (lower means that less of the drop is written into the action); the same probe on the feature change $o_{t+1}-o_t$ reaches 0.954 and 0.953. $^\dagger$Condition number of the forward-model Jacobian, which depends on the state.}
+	\caption{Koopman ablations, mean $\pm$ s.d.\ over 15 runs. Absorption: AUROC of a probe from $z_t$ to the post-release label (lower is better). $^\dagger$Jacobian condition number.}
 	\label{t:ablation}
 	\footnotesize
 	\setlength{\tabcolsep}{3.2pt}
@@ -737,29 +623,23 @@ In the controlled study of Section~\ref{s:toy}, where the drift is known, the Ko
 
 \begin{figure}[t]
 	\centering
-	\includegraphics[width=\columnwidth]{figs/fig_auroc_folds_heatmap.pdf}
-	\caption{Per-fold reversibility AUROC (mean over 3 seeds), with the colour scale centred at chance (0.5). In all 5 R$\to$I folds the sign-reversal LAM is below chance, while all Koopman models remain above chance in every run.}
+	\includegraphics[width=0.8\columnwidth]{figs/fig_auroc_folds_heatmap.pdf}
+	\caption{Per-fold reversibility AUROC (mean over 3 seeds); colour centred at chance.}
 	\label{f:folds}
 \end{figure}
 
 \subsection{Detecting Irreversible Moments}
-$\kappa_t$ distinguishes the half second following a release, during which a slice drops into a slot or onto the plate, from periods of grasped transport, reaching an AUROC of $0.746\pm0.035$ for I$\to$R and $0.635\pm0.055$ for R$\to$I.
-The plain LAM scores 0.722 and 0.610; {\method} is better in 10 of 15 I$\to$R runs ($p=0.038$) and in 9 of 15 R$\to$I runs ($p=0.37$), a small difference.
-Fold by fold (Fig.~\ref{f:folds}), sign reversal is below chance in all five R$\to$I folds, whereas no Koopman model is below chance in any run.
-The anchor helps here: {\method} exceeds {\method} without the anchor in 14 and 15 of 15 runs, by 0.016 and 0.046 ($p<0.001$).
-By Corollary~\ref{c:kappa}, however, $\kappa_t$ responds only to the inferred action, so this AUROC may reflect the release motion or the arm's speed rather than the passive drop.
-Table~\ref{t:detect} therefore compares $\kappa_t$ with its translation-free and state-dependent variants and with simple detectors, against ordinary and motion-matched negatives; arm speed measures only the agent's motion, so we also match on the feature change.
-
-The control removes most of the separation.
-Against carrying steps of the same arm speed, $\kappa_t$ falls to 0.34 for I$\to$R, well below chance, and 0.58 for R$\to$I; against steps of the same feature change it reaches 0.62 and 0.47.
-$\klin_t$, $\|z_t\|$ and the LAM's Jacobian condition number behave in the same way, as expected of scores that depend on the inferred action alone.
-The per-transition residual $\varepsilon_t$ is the only learned score that stays above chance under both controls (0.67--0.75), but it is weak against all carrying steps for I$\to$R (0.63) and inconsistent across variants: for {\method} without the anchor it is 0.33 for R$\to$I, below chance.
-The simple detectors are stronger: arm speed reaches 0.84 for I$\to$R and a gripper-opening indicator 0.82 for R$\to$I, and one of the two scores higher than every learned score in every column of Table~\ref{t:detect} but one, where $\varepsilon_t$ (0.75) exceeds the gripper indicator (0.72) against carrying steps of the same arm speed for I$\to$R.
-The AUROC of $\kappa_t$ on the robot data is therefore best read as detecting the release motion, not irreversibility, which matches the controlled study, where $\kappa_t$ separates irreversible from reversible steps with AUROC 0.73 for {\method} but only 0.50 against reversible steps of the same displacement (Section~\ref{s:toy}).
+$\kappa_t$ separates the 0.5\,s after a release (a slice dropping into a slot or onto the plate) from carrying with AUROC $0.746\pm0.035$ and $0.635\pm0.055$, against 0.722 and 0.610 for the LAM ({\method} ahead in 10 and 9 of 15 runs, $p=0.038$, $0.37$).
+Sign reversal is below chance in all five R$\to$I folds (Fig.~\ref{f:folds}), no Koopman model in any run; the anchor adds 0.016 and 0.046 (14 and 15 of 15 runs, $p<0.001$).
+Since $\kappa_t$ depends only on $z_t$ (Corollary~\ref{c:kappa}), Table~\ref{t:detect} adds negatives matched in arm speed (agent motion) or feature change (total motion), score variants and simple detectors.
+Matching removes most of the separation: $\kappa_t$ falls to 0.34 (below chance) and 0.58 at equal arm speed and to 0.62 and 0.47 at equal feature change, and $\klin_t$, $\|z_t\|$ and the LAM's Jacobian behave alike.
+Only $\varepsilon_t$ stays above chance under both controls (0.67--0.75), but it is weak overall for I$\to$R (0.63) and inconsistent across variants (0.33 for R$\to$I without anchor).
+Arm speed (0.84, I$\to$R) or gripper opening (0.82, R$\to$I) beats every learned score in every column but one ($\varepsilon_t$, 0.75 vs.\ 0.72, equal arm speed, I$\to$R).
+$\kappa_t$ thus detects the release motion rather than irreversibility, as in the controlled study, where its AUROC of 0.73 falls to 0.50 at equal displacement.
 
 \begin{table}
 	\centering
-	\caption{Reversibility AUROC of each score (mean over 15 runs) for post-release steps against all carrying steps, and against the three carrying steps nearest to each post-release step in arm joint speed or in feature change $\|o_{t+1}-o_t\|$. $^\dagger$State-dependent Jacobian condition number.}
+	\caption{Reversibility AUROC (mean over 15 runs), post-release vs.\ all or motion-matched carrying steps. $^\dagger$Jacobian condition number.}
 	\label{t:detect}
 	\footnotesize
 	\setlength{\tabcolsep}{2.2pt}
@@ -785,22 +665,14 @@ The AUROC of $\kappa_t$ on the robot data is therefore best read as detecting th
 \end{table}
 
 \subsection{Undo and Drift Residual}
-The drift residual of {\method} is 0.988 and 0.990, and that of every Koopman model with the reversal loss and a drift generator is 0.96--1.00, the two-direction reference included, so the undo action of Eq.~(\ref{e:undo}) reduces to $-z$ in practice and no state-independent single-step undo exists for the learned operator.
-Remark~\ref{r:eps} shows that this value is close to what unrelated actions and drift would give: the analytic reference is at least 0.87 for $m=16$ and $d=64$, and in a development run, weakening the penalty on the symmetric action blocks to $\lambda_v=10^{-5}$ or 0 left the residual at 0.992.
-Table~\ref{t:undo} confirms this with a random drift generator of the same structure and norm, whose residual (0.986 and 0.987) is as high as that of the learned drift: the learned actions cancel no more of the learned drift than of a random one.
-The residual therefore shows that the learned actions cannot cancel the learned drift, not that a drop is irreversible.
-The per-transition residual does not separate drops from carrying either (1.008 against 0.999 for I$\to$R, 1.003 against 0.992 for R$\to$I).
-
-State-specific undo, Eq.~(\ref{e:undoss}), behaves differently.
-Within the learned model, an action that returns the decoded features to within half a step exists for 85\% and 72\% of post-release transitions in one step and for 99\% and 92\% with a three-step plan, more often than for carrying transitions (46\% and 57\%, 85\% and 91\%).
-This success is measured relative to the step length in decoded features, and post-release steps are long; it shows how flexibly the learned model can be steered back, not that a dropped slice can be lifted out of the slot, and it cannot be executed on the robot.
-The plain LAM reaches similar rates (68\% and 64\% post-release in one step), so undo success does not distinguish reversible from irreversible steps either.
-The generators stay in the regime the theory assumes: the median of $\|A(z_t)\|_2$ is 1.01 and 1.14, and for every evaluated step the spectra of $A(z_t)$ and $A(\zundo)$ lie in the strip $|\mathrm{Im}\,\lambda|<\pi$ on which the matrix exponential is injective.
-In the controlled study, where part of the drift can be cancelled, the residual is 0.85 for {\method} and 0.52--0.61 without the reversal loss or the anchor, below a random-drift reference of 0.97, and the drift correction improves the undo action (Section~\ref{s:toy}).
+The drift residual is 0.988 and 0.990 for {\method} and 0.96--1.00 for every Koopman model with reversal loss and drift generator, so $\zundo$ reduces to $-z$ and no state-independent undo exists.
+Unrelated actions and drift give the same (Remark~\ref{r:eps}): the analytic reference is at least 0.87, a random drift of equal structure and norm gives 0.986 and 0.987, and $\lambda_v=10^{-5}$ or 0 left 0.992 in development; this does not show that a drop is irreversible, and $\varepsilon_t$ does not separate drops from carrying (Table~\ref{t:undo}).
+Within the model, state-specific undo~(\ref{e:undoss}) returns 85\% and 72\% of post-release transitions within half a step (99\%, 92\% in three steps), more than carrying ones, and the LAM is similar (68\%, 64\%); relative to the long post-release steps, this measures the model's flexibility, not whether a slice can be lifted out, and cannot be executed on the robot.
+The theory's assumptions hold: median $\|A(z_t)\|_2$ is 1.01 and 1.14, and every evaluated $A(z_t)$ and $A(\zundo)$ has its spectrum in the strip $|\mathrm{Im}\,\lambda|<\pi$.
 
 \begin{table}
 	\centering
-	\caption{Null references and undo diagnostics for {\method}, mean over 15 runs. End distance, action alignment and drift residual repeat Table~\ref{t:main}. Undo success: fraction of transitions that the state-specific undo returns to within half a step in decoded features (post-release / carrying).}
+	\caption{Null references and undo diagnostics for {\method} (mean over 15 runs; post-release / carrying).}
 	\label{t:undo}
 	\footnotesize
 	\setlength{\tabcolsep}{3pt}
@@ -831,30 +703,27 @@ In the controlled study, where part of the drift can be cancelled, the residual 
 
 \begin{figure}[t]
 	\centering
-	\includegraphics[width=\columnwidth]{figs/fig_fewshot_curves.pdf}
-	\caption{Forward error on the opposite task after only the IDM is fine-tuned on $k$ recordings; bands show one standard deviation.}
+	\includegraphics[width=0.8\columnwidth]{figs/fig_fewshot_curves.pdf}
+	\caption{Opposite-task error after fine-tuning the IDM on $k$ recordings (bands: s.d.).}
 	\label{f:fewshot}
 \end{figure}
 
-When $\phi$ and $G_0$ are frozen and only the IDM is adapted, the two {\method} variants give the smallest opposite-task error among the models of Table~\ref{t:main} for every $k$ and in both directions (Fig.~\ref{f:fewshot}).
-For $k=5$, {\method} without the anchor attains 1.001 on I$\to$R and 0.804 on R$\to$I, the anchored variant 1.029 and 0.815, the plain LAM 1.076 and 0.868, and sign reversal 1.051 and 0.840.
-{\method} is better than the plain LAM in 14 and 15 of 15 runs ($p<0.001$), and the anchor costs transfer: {\method} without it is better in all 15 I$\to$R runs ($p<0.001$) and in 11 of 15 R$\to$I runs ($p=0.007$).
-The gap to the LAM baselines is present already at $k=0$, before any adaptation (1.058 and 0.846 for {\method}, 1.109 and 0.904 for the LAM), and the Koopman ablations show that it is not the shared drift that transfers: with $G_0=0$ the error is 1.025 and 0.813, no different from {\method} ($p=0.38$ and $0.67$), and {\method}-SR and {\method} without the reversal loss are no different either ($p\ge0.28$).
-Fine-tuning $G_0$ together with the IDM raises the I$\to$R error to 1.088 and lowers the R$\to$I error only slightly, to 0.789.
-The advantage therefore comes from the Koopman form of the forward model, not from the drift generator.
-For I$\to$R the error stays at or above the no-change level of 1.0 even after five recordings, so no model predicts removal from insertion data better than copying the current frame; in that direction the advantage is a smaller deficit, not useful prediction.
+With only the IDM adapted, the two {\method} variants have the lowest error of the Table~\ref{t:main} models at every $k$ (Fig.~\ref{f:fewshot}); at $k=5$, 1.001 and 0.804 without anchor and 1.029 and 0.815 with it, against 1.076 and 0.868 (LAM) and 1.051 and 0.840 (sign reversal).
+{\method} beats the LAM in 14 and 15 of 15 runs ($p<0.001$), and the anchor costs transfer (w/o anchor better in 15 and 11 runs, $p<0.001$, $0.007$).
+The gap exists at $k=0$ (1.058, 0.846 vs.\ 1.109, 0.904) and comes from the Koopman model, not the shared drift: $G_0=0$ gives 1.025 and 0.813 ($p=0.38$, $0.67$), {\method}-SR and w/o reversal do not differ ($p\ge0.28$), and fine-tuning $G_0$ gives 1.088 and 0.789.
+For I$\to$R the error stays at or above the no-change level, a smaller deficit rather than useful prediction.
 
 \subsection{Controlled Study with Known Drift} \label{s:toy}
-To test the theory where the ground truth is known, we simulate a point $p\in\R^2$ with $p_{t+1}=p_t+\Delta t\,(f(p_t)+u_t)$, $\Delta t=0.1$ and actions $u\in[-1,1]^2$, observed only through a fixed random two-layer $\tanh$ lift to 32 dimensions.
-The drift $f(p)=g-k\,w(p)\,(p-c)$ combines a constant pull $g=(0,-0.5)$ with a dissipative well of radius 1 around $c=(0,-1)$, where $w$ is a smooth indicator and $k=3$, so the scene settles on its own inside the well.
-The dynamics are first order, as Definition~\ref{d:trev} assumes, and every transition has a unique one-step undo action $u^*=(p_t-p_{t+1})/\Delta t-f(p_{t+1})$; we call a transition reversible if the agent can execute it, $\|u^*\|_\infty\le2$, which holds everywhere outside the well and fails for 21.7\% of all transitions.
-Idle steps ($u=0$) occur with probability 0.15 and, as on the robot, the anchor sees only those outside the well.
-All seven models use the architecture of Section~\ref{s:method} with $d=8$, $m=2$ and 3,000 training steps and are evaluated on 6,000 fresh transitions, over three seeds (Table~\ref{t:toyd}).
-Latent actions are mapped to real actions by a linear probe fitted on labeled transitions, which fixes the gauge, and undo actions are executed in the simulator.
+We simulate a point $p\in\R^2$, $p_{t+1}=p_t+\Delta t\,(f(p_t)+u_t)$, $\Delta t=0.1$, $u\in[-1,1]^2$, seen through a fixed random two-layer $\tanh$ lift to 32 dimensions, with drift $f(p)=g-k\,w(p)\,(p-c)$: a pull $g=(0,-0.5)$ plus a dissipative well of radius 1 around $c=(0,-1)$ ($w$ a smooth indicator, $k=3$).
+The dynamics are first order (Definition~\ref{d:trev}), and each transition has a unique one-step undo $u^*=(p_t-p_{t+1})/\Delta t-f(p_{t+1})$; it is reversible if $\|u^*\|_\infty\le2$, which fails only in the well, for 21.7\% of transitions.
+Idle steps ($u=0$, probability 0.15) anchor only outside the well, as on the robot.
+Seven models ($d=8$, $m=2$, 3,000 steps, three seeds) are evaluated on 6,000 fresh transitions (Table~\ref{t:toyd}); a linear probe from latent to real actions, fitted on labeled transitions, fixes the gauge, and undo actions are executed in the simulator.
+Absorbed drift is the action size the probe reads on idle steps in the well, relative to the mean; AUROC compares irreversible with all or the three nearest-displacement reversible steps; return is the median distance to $p_t$ after undo, in step lengths.
+References: feature-change AUROC 0.93 (all) and 0.60 (equal displacement); true drift magnitude 0.99 and 0.99; random-generator residual 0.97; negated true action returns 1.40 (reversible) and 1.74 (irreversible); best possible 0 and 0.61.
 
 \begin{table*}
 	\centering
-	\caption{Controlled study with known dissipative drift (mean $\pm$ standard deviation over 3 seeds). Absorbed drift: size of the action that the probe reads from $z_t$ on idle steps inside the well, where the true action is zero, relative to the mean action size. AUROC: irreversible against reversible steps, either all of them or the three nearest in displacement $\|p_{t+1}-p_t\|$. Return: simulator distance to $p_t$ after executing the undo action, divided by the step length (median). Model-independent references: AUROC of the feature change 0.93 (all) and 0.60 (equal displacement), of the true drift magnitude 0.99 and 0.99; drift residual of a random generator 0.97; return of the negated true action 1.40 (reversible) and 1.74 (irreversible); best possible return 0 and 0.61.}
+	\caption{Controlled study with known dissipative drift (mean $\pm$ s.d.\ over 3 seeds).}
 	\label{t:toyd}
 	\footnotesize
 	\setlength{\tabcolsep}{3pt}
@@ -876,68 +745,34 @@ Latent actions are mapped to real actions by a linear probe fitted on labeled tr
 	\end{tabular}
 \end{table*}
 
-Three results bear on the claims of this paper.
-First, decoding under $-G_0$ reduces drift absorption but does not remove it.
-On idle steps inside the well, the probe reads an action of 0.70 of the typical size from the latent action of {\method}, against 0.81 for {\method}-SR, 0.79 without the reversal loss, 0.83 with $G_0=0$ and 0.89--0.95 for the MLP models and for {\method} without the anchor.
-Proposition~\ref{p:signrev} predicts the direction of the first comparison, but most of the passive motion still enters the action; the anchor accounts for the larger part of the reduction and costs the Koopman models most of their fit (forward error 0.29 with it, 0.02 without).
-Second, $\kappa_t$ detects irreversible steps through motion rather than through irreversibility.
-Against all reversible steps its AUROC is 0.68--0.92, but against reversible steps of the same displacement it falls to 0.38--0.60 for every model, while the true drift magnitude stays at 0.99.
-Matching on the agent's action alone, the analogue of arm speed on the robot, leaves the AUROC of {\method} at 0.72, so matched negatives must control the total displacement.
-The state-dependent alternatives do not help: $\rho_t$ is below chance (0.18--0.34) and $\varepsilon_t$ is inconsistent across variants (0.41--0.82).
-Third, the drift correction of the undo action matters where the drift can be cancelled.
-On reversible steps, executing {\method}'s closed-form undo $-z-2c$ returns the point to within 0.76 step lengths, against 1.22 for $-z$ in {\method}-SR, 1.19 with $G_0=0$ and 1.40 for negating the true action; the plain LAM's reverse action does better still (0.53), and no model comes close to a perfect return, which the probe ($R^2=0.32$--$0.59$) limits.
-On irreversible steps every model stays above 1.0 step lengths, against a best possible 0.61.
-Finally, removing the reversal loss lowers the antisymmetry of the IDM from 0.93 to 0.39 cosine, as Remark~\ref{r:reduce} implies, and raises absorption from 0.70 to 0.79; the drift residual is 0.52--0.86 for the variants with a drift generator, below the random-drift reference of 0.97, so here the actions cancel part of the drift.
-
-\subsection{Joint Motion}
-No model recovers the real reverse joint motion: every joint-probe error exceeds 1.0, although all beat negated, time-reversed joint deltas (1.58 and 1.53), which confirms that removal is not insertion played backward.
-
+First, $-G_0$ reduces drift absorption without removing it: the probe reads 0.70 of the typical action size from {\method} on idle steps in the well, against 0.81 for {\method}-SR, 0.79 without reversal loss, 0.83 with $G_0=0$ and 0.89--0.95 for the MLPs and w/o anchor, as Proposition~\ref{p:signrev} predicts; the anchor accounts for most of the reduction but costs most of the fit (forward error 0.29 vs.\ 0.02).
+Second, $\kappa_t$ detects through motion: its AUROC of 0.68--0.92 falls to 0.38--0.60 at equal displacement (true drift magnitude: 0.99), whereas matching only the agent's action, like arm speed, leaves {\method} at 0.72; $\rho_t$ is below chance (0.18--0.34) and $\varepsilon_t$ inconsistent (0.41--0.82).
+Third, the drift correction helps where drift can be cancelled: on reversible steps $-z-2c$ returns to within 0.76 step lengths, against 1.22 for $-z$ in {\method}-SR, 1.19 with $G_0=0$ and 1.40 for the negated true action, but the LAM does better (0.53), every model is limited by the probe ($R^2=0.32$--$0.59$), and on irreversible steps all stay above 1.0 (best possible 0.61).
+Without the reversal loss, IDM antisymmetry drops from 0.93 to 0.39 (Remark~\ref{r:reduce}) and absorption rises to 0.79; residuals of 0.52--0.86 (0.85 for {\method}), below the random 0.97, show that here actions cancel part of the drift.
 
 % =====================================================================
 \section{Discussion and Limitations} \label{s:discussion}
 
 \paragraph{What the evidence supports.}
-The cross-validated results, over 5 folds and 3 seeds, support three claims: Koopman models trained with a reversal loss avoid the divergence and below-chance detection of an MLP sign-reversal model, in every run; the condition number of the learned step separates post-release windows from grasped carrying above chance, in every run; and the Koopman variants transfer best to the opposite task when only the IDM is adapted.
-In the controlled study with known drift, decoding swapped pairs under $-G_0$ absorbs less passive motion than under $+G_0$, and the drift correction improves the undo action on reversible steps, in line with Propositions~\ref{p:undo} and~\ref{p:signrev}.
+In every run, Koopman models with a reversal loss avoid the divergence and below-chance detection of MLP sign reversal and $\kappa_t$ separates releases from carrying; Koopman variants transfer best; and with known drift, $-G_0$ absorbs less drift than $+G_0$ and the drift correction improves undo (Propositions~\ref{p:undo},~\ref{p:signrev}).
 
 \paragraph{What it does not.}
-On the robot data, the benefits cannot be credited to the drift-aware loss.
-Decoding swapped pairs under $+G_0$ instead of $-G_0$ makes reverse rollouts more stable, not less, and leaves detection, transfer and drift absorption unchanged; stability comes from the reversal loss in Koopman form, with a smaller contribution from having a drift generator at all, and transfer persists with $G_0=0$, so it comes from the Koopman forward model rather than from a shared drift.
-In this task the drop is brief and triggered by the agent, so a sign-reversal model can likely attribute it to the release action at little cost, and the advantage of $-G_0$ seen in the controlled study, where drift acts continuously, does not appear.
-{\method} does not outperform a plain LAM in the stability of reverse rollouts, and the plain LAM, which has no reversal constraint, aligns actions better; on detection, {\method} is ahead by only 0.024.
-The detection itself is mostly detection of motion: against carrying steps of equal arm speed or feature change, $\kappa_t$ falls to 0.34--0.62, and arm speed or gripper opening detects releases better.
-The robot-idle anchor raises detection in almost every run but costs transfer, likely because idle steps rarely coincide with strong drift in this task, so the anchor constrains the gauge where it matters least.
-The undo action is limited by a drift residual near 0.99, as high as for a random drift of the same norm (Remark~\ref{r:eps}); $\zundo$ reduces to $-z$ in practice, and no state-independent single-step undo exists.
-State-specific undo succeeds within the learned model for most transitions, drops included, which reflects the flexibility of the model rather than the physics, since a slice in a slot cannot be lifted by reversing the release.
-{\method} measures how much drift its actions cannot cancel, but on the robot data this residual reflects the parameterisation more than the physics of the task.
-Insertion-to-removal transfer stays at the no-change level.
-In the controlled study, $\kappa_t$ separates irreversible steps only through their larger motion and is at chance against steps of equal displacement, the state-dependent alternatives $\rho_t$ and $\varepsilon_t$ do not detect irreversibility either, and a plain LAM undoes reversible steps better than any Koopman variant; the anchor reduces drift absorption there but costs most of the Koopman models' fit.
+On the robot, the gains are not due to the reversed drift ($+G_0$ is as good or better), likely because the brief, agent-triggered drop can be attributed to the release at little cost.
+{\method} is not more stable than a plain LAM, which aligns actions better, and its detection mostly reflects motion; the anchor costs transfer, likely because idle steps rarely coincide with drift; no state-independent undo exists, and state-specific undo reflects model flexibility, not physics; I$\to$R transfer stays at the no-change level.
+With known drift, $\kappa_t$ tracks motion, $\rho_t$ and $\varepsilon_t$ fail, a plain LAM undoes best, and the anchor costs most of the fit.
 
 \paragraph{Scope.}
-The evaluation uses one task, one camera view for the dynamics and a frozen encoder; every model is trained with three seeds per fold.
-The latent state is computed from a single frame and its dynamics are first order, so Definition~\ref{d:trev} is time reversal of the learned dynamics, not of the mechanics, and momentum is not represented.
-In this task the drop completes within a fraction of one 0.5\,s step and is triggered by the agent opening the gripper, and the scene is otherwise static unless the robot moves it; a constant drift generator applied at every state is a coarse model of such event-triggered passive motion.
-The anchor uses proprioceptive joint speed, so the anchored model is not trained from video alone.
-The theory assumes generators whose spectra lie in the strip on which the matrix exponential is injective; this holds for every evaluated 0.5\,s step (Section~\ref{s:results}), and longer horizons need the same check.
+One task, one camera and a frozen encoder; first-order single-frame states without momentum (Definition~\ref{d:trev} reverses learned dynamics, not mechanics); a brief agent-triggered drop that constant drift models coarsely; an anchor from joint speed; and a strip condition verified only for 0.5\,s steps.
 
 \paragraph{Outlook: deformable objects.}
-Folding clothes would be an informative next benchmark, since a single task contains both regimes~\cite{lin2020softgym,lin2021vcd}.
-Slow folding motions are close to reversible, but draping and settling after release dissipate energy---their Koopman modes satisfy $|\lambda|<1$---and cloth is typically unfolded by flinging or regrasping rather than by reversing the fold~\cite{ha2021flingbot,avigal2022speedfolding}.
-Koopman models already control soft robots~\cite{bruder2019soft}.
-Settling continues after the gripper lets go, so cloth also offers passive motion without agent action, which the toaster task lacks.
-We expect state-dependent scores such as $\rho_t$ and $\varepsilon_t$ to separate fold and settle phases, and state-specific undo to quantify how much of a fold can be undone in one step.
+Cloth folding combines nearly reversible folds with dissipative settling (Koopman modes $|\lambda|<1$) and is undone by flinging or regrasping~\cite{lin2020softgym,lin2021vcd,ha2021flingbot,avigal2022speedfolding}; Koopman models already control soft robots~\cite{bruder2019soft}, and its passive settling, absent here, suits state-dependent scores and state-specific undo.
 
 % =====================================================================
 \section{Conclusion} \label{s:conclusion}
 
-Recovering reverse actions from video hinges on telling the agent's effect apart from the scene's autonomous motion.
-{\method} expresses this separation with a Koopman operator whose drift generator is distinct from its action generators.
-Trained only on forward footage, it delivers an exact backward step in the lifted space, the time-reversal action of the first-order latent dynamics, the undo action and a reversibility score; we proved when each is exact, why sign reversal in Koopman form forces zero drift and why the split between agent and drift must be anchored, and we showed that the score depends only on the inferred action and that a drift residual near 1 is expected when actions and drift are unrelated.
-On real bimanual robot data, over five folds and three seeds, reverse rollouts of {\method} remained stable where an MLP sign-reversal model diverged, post-release steps were separated from carrying above chance, and transfer to the opposite task was the best among the compared models.
-The ablations, however, credit these results to the reversal loss and the Koopman form rather than to the reversed drift: decoding under $+G_0$ was even more stable, and transfer persisted without a drift generator.
-A plain LAM was about as stable, the reversibility score lost most of its separation against steps of equal motion, and the learned actions cancelled no more of the learned drift than of a random one.
-In a controlled study with known drift, decoding under the reversed drift absorbed less passive motion than sign reversal and the drift correction improved the undo action, but the reversibility score again tracked motion rather than irreversibility, which calls for state-dependent scores and for tasks in which passive motion is sustained rather than brief.
-Multi-step undo, state-dependent reversibility scores, velocity-aware latent states and deformable objects are the next steps.
+{\method} separates the agent's effect from the scene's own motion with a Koopman operator whose drift generator is distinct from its action generators, and gives from forward video an exact backward step, time-reversal and undo actions and a reversibility score, with proofs of when each holds.
+On robot data its rollouts stayed stable where MLP sign reversal diverged, releases were detected above chance and transfer was best, gains the ablations credit to the reversal loss and Koopman form; a plain LAM was about as stable and the score mainly tracked motion.
+With known drift, the reversed drift reduced absorption and the drift correction improved undo; next are multi-step undo, state-dependent scores, velocity-aware states and deformable objects.
 
 \ack{To be added after review.}
 

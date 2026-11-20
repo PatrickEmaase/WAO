@@ -13,9 +13,9 @@ rep = [
     (", supported in the appendices by per-fold results, development runs and a step-by-step walkthrough of every model variable.",
      "."),
     ("Section~\\ref{s:discussion} discusses limitations and Section~\\ref{s:conclusion} concludes; the appendices give further results, a controlled study, development runs and implementation details.",
-     "Section~\\ref{s:discussion} discusses limitations, and Section~\\ref{s:conclusion} concludes."),
+     "Section~\\ref{s:discussion} discusses limitations and Section~\\ref{s:conclusion} concludes."),
     ("The design is task-independent; the instantiation used in our experiments is shown in \\ref{a:impl} (Fig.~\\ref{f:pipeline}).",
-     "The design is task-independent; Section~\\ref{s:setup} describes the instantiation used in our experiments."),
+     "The design is task-independent; Section~\\ref{s:setup} gives the instantiation used here."),
     ("(chance 33.3\\%; \\ref{a:dev}).", "(chance 33.3\\%)."),
 ]
 for old, new in rep:
@@ -24,9 +24,7 @@ for old, new in rep:
 
 s = t.index("\\subsection{Further Results}")
 e = t.index("% =====================================================================\n\\section{Discussion and Limitations}")
-t = t[:s] + ("\\subsection{Joint Motion}\n"
-             "No model recovers the real reverse joint motion: every joint-probe error exceeds 1.0, although all beat "
-             "negated, time-reversed joint deltas (1.58 and 1.53), which confirms that removal is not insertion played backward.\n\n\n") + t[e:]
+t = t[:s] + t[e:]   # the joint-motion finding is in the Results opener; the rest points to appendices
 
 t = t.replace("% Build: pdflatex ravi; bibtex ravi; pdflatex ravi; pdflatex ravi",
               "% Main paper without appendices.\n% Build: pdflatex RAVI_Main_2026; bibtex RAVI_Main_2026; pdflatex RAVI_Main_2026; pdflatex RAVI_Main_2026")
